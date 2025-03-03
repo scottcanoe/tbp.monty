@@ -154,6 +154,7 @@ ignore_missing_imports = true
 [tool.ruff]
 line-length = 88
 target-version = "py38"
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.format]
 indent-style = "space"
