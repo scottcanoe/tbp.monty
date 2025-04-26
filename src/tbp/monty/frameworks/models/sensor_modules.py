@@ -416,8 +416,12 @@ class NoiseMixin:
             shape = feat_val.shape
             noise = self.rng.normal(0, self.noise_params["features"][feat_name], shape)
             new_feat_val = feat_val + noise
-            if feat_name == "hsv":  # make sure hue stays in 0-1 range
-                new_feat_val[0] = np.clip(new_feat_val[0], 0, 1)
+            if feat_name == "hsv":
+                # Make hue stay in 0-1 range via modulo operation since it is
+                # a circular variable. Clip saturation and value to 0-1 range.
+                new_feat_val[0] = np.mod(new_feat_val[0], 1)
+                new_feat_val[1:] = np.clip(new_feat_val[1:], 0, 1)
+
         return new_feat_val
 
 
