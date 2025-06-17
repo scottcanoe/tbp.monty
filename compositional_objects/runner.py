@@ -152,9 +152,8 @@ class Runner:
 
         start_time = time.time()
         with self.exp as exp:
-            # TODO: Later will want to evaluate every x episodes or epochs
-            # this could probably be solved with just setting the logging frequency
-            # Since each trainng loop already does everything that eval does.
+            # This is where I'd like to do instance-level wrapping or
+            # wrapping class-level methods.
             if exp.do_train:
                 print("---------training---------")
                 exp.train()
@@ -170,23 +169,6 @@ class Runner:
         print(msg)
 
 
-# if __name__ == "__main__":
-#     """
-#     Run from CLI:
-
-#        python runner.py -e dist_agent_1lm
-
-#     Run directly:
-
-#        runner = Runner(CONFIGS["dist_agent_1lm"])
-#        runner.run()
-#     """
-
-#     # Run from CLI.
-#     runner = Runner.from_cli(CONFIGS)
-#     runner.run()
-
-
 class MyClass:
     def __init__(self, val=0):
         self.val = val
@@ -195,13 +177,22 @@ class MyClass:
         return self.val
 
 
+class MyClass2(MyClass):
+    def get_val(self):
+        return MyClass.get_val(self)
+
+
 a = MyClass()
+print(f"a.get_val() = {a.get_val()}")
+
+b = MyClass2()
+print(f"b.get_val() = {b.get_val()}")
 
 
 def wrap_get_val(method):
     @functools.wraps(method)
     def wrapper(self):
-        print("wrapper called")
+        # print("wrapper called")
         val = method(self)
         return f"wrapped {val}"
 
@@ -209,7 +200,14 @@ def wrap_get_val(method):
 
 
 MyClass.get_val = wrap_get_val(MyClass.get_val)
-b = MyClass()
+c = MyClass()
+d = MyClass2()
+
+print(f"a.get_val() = {a.get_val()}")
+print(f"b.get_val() = {b.get_val()}")
+print(f"c.get_val() = {c.get_val()}")
+print(f"d.get_val() = {d.get_val()}")
+
 
 _wrapped_classes = set()
 _wrapped_methods = set()
@@ -239,26 +237,61 @@ def list_methods(cls):
         print(f"  {method_name}")
 
 
-_getitem = []
+messages = []
+sources = []
+timestamps = []
+
+messages = []
+
+include_sources = [
+    # "experiment.run_epoch",
+    # "experiment.run_episode",
+]
 
 
-def wrap_dataset__getitem__(cls):
+def receiver(source: str, msg: dict):
+    if not include_sources or (include_sources and source in include_sources):
+        messages.append({"source": source, "time": time.time(), "msg": msg})
+
+
+def wrap_experiment_method(exp, method_name, include_state: bool = False):
+    cls = exp.__class__ if isinstance(exp, MontyExperiment) else exp["experiment_class"]
+    method = getattr(cls, method_name)
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        if include_state:
+            msg = dict(self.state_dict())
+            msg.pop("time_stamp", None)
+        else:
+            msg = None
+
+        receiver(f"experiment.{method_name}", msg)
+        return method(self, *args, **kwargs)
+
+    setattr(cls, method_name, wrapper)
+
+
+def wrap_dataset__getitem__(exp):
+    if isinstance(exp, MontyExperiment):
+        cls = exp.dataset.__class__
+    else:
+        cls = exp["dataset_class"]
+
     method = cls.__getitem__
 
     @functools.wraps(method)
     def wrapper(self, action):
-        out = method(self, action)
-        _getitem.append(out)
-        return out
+        observation, state = method(self, action)
+        msg = {
+            "action": action,
+            "observation": observation,
+            "state": state,
+        }
+        receiver("dataset.__getitem__", msg)
+        return observation, state
 
     cls.__getitem__ = wrapper
-
-    # def __getitem__(self, action: Action):
-    #     observation = self.env.step(action)
-    #     state = self.env.get_state()
-    #     if self.transform is not None:
-    #         observation = self.apply_transform(self.transform, observation, state)
-    #     return observation, ProprioceptiveState(state) if state else None
 
 
 runner = Runner(CONFIGS["dist_agent_1lm"], print_config=False)
@@ -266,35 +299,23 @@ runner.prepare()
 config = runner.config_dict
 exp = runner.exp
 
-cls = config["experiment_class"]
-# Get all methods of the experiment class
-methods = inspect.getmembers(cls, predicate=inspect.isfunction)
-print("\nMethods of experiment class:")
-for method_name, method in methods:
-    wrap_method(cls, method_name)
-    # print(f"  {name}")
 
-
-dataset_cls = config["dataset_class"]
-wrap_dataset__getitem__(dataset_cls)
-
-# dataset_methods = inspect.getmembers(dataset_cls, predicate=inspect.isfunction)
-# print("\nMethods of dataset class:")
-# for method_name, method in dataset_methods:
-#     wrap_method(dataset_cls, method_name)
-
-
-# for method_name in ["pre_epoch", "pre_episode", "post_episode", "post_epoch"]:
-#     wrap_method(cls, method_name)
-# wrap_method(exp.dataset.__class__, "__getitem__")
+wrap_experiment_method(config, "run_epoch", include_state=True)
+wrap_experiment_method(config, "pre_epoch", include_state=False)
+wrap_experiment_method(config, "post_epoch", include_state=False)
+wrap_experiment_method(config, "run_episode", include_state=True)
+wrap_experiment_method(config, "pre_episode", include_state=True)
+wrap_experiment_method(config, "run_episode_steps", include_state=True)
+wrap_experiment_method(config, "post_episode", include_state=True)
+# wrap_dataset__getitem__(config)
 
 runner.run()
 
-images = []
-for i, elt in enumerate(_getitem):
-    observation, state = elt
-    im = observation["agent_id_0"]["view_finder"]["rgba"]
-    images.append(im)
+for msg in messages:
+    print(msg)
 
-
-imageio.mimsave("images.gif", images, duration=100)
+# images = []
+# for i, msg in enumerate(messages):
+#     im = msg["observation"]["agent_id_0"]["view_finder"]["rgba"]
+#     images.append(im)
+# imageio.mimsave("images.gif", images, duration=100)
