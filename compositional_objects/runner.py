@@ -169,67 +169,6 @@ class Runner:
         print(msg)
 
 
-class MyClass:
-    def __init__(self, val=0):
-        self.val = val
-
-    def get_val(self):
-        return self.val
-
-
-class MyClass2(MyClass):
-    def get_val(self):
-        return MyClass.get_val(self)
-
-
-a = MyClass()
-print(f"a.get_val() = {a.get_val()}")
-
-b = MyClass2()
-print(f"b.get_val() = {b.get_val()}")
-
-
-def wrap_get_val(method):
-    @functools.wraps(method)
-    def wrapper(self):
-        # print("wrapper called")
-        val = method(self)
-        return f"wrapped {val}"
-
-    return wrapper
-
-
-MyClass.get_val = wrap_get_val(MyClass.get_val)
-c = MyClass()
-d = MyClass2()
-
-print(f"a.get_val() = {a.get_val()}")
-print(f"b.get_val() = {b.get_val()}")
-print(f"c.get_val() = {c.get_val()}")
-print(f"d.get_val() = {d.get_val()}")
-
-
-_wrapped_classes = set()
-_wrapped_methods = set()
-
-t0 = time.time()
-
-
-def wrap_method(cls, method_name):
-    method = getattr(cls, method_name)
-    if method in _wrapped_methods:
-        print(f"Method {cls.__name__}.{method_name} already wrapped")
-        return
-
-    @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
-        print(f"  +  wrapper called for {method_name} at {time.time() - t0:.2f}s")
-        return method(self, *args, **kwargs)
-
-    setattr(cls, method_name, wrapper)
-    _wrapped_methods.add(getattr(cls, method_name))
-
-
 def list_methods(cls):
     methods = inspect.getmembers(cls, predicate=inspect.isfunction)
     print("\nMethods of experiment class:")
@@ -293,8 +232,12 @@ def wrap_dataset__getitem__(exp):
 
     cls.__getitem__ = wrapper
 
+object_name = "tbp_mug"
 
-runner = Runner(CONFIGS["dist_agent_1lm"], print_config=False)
+
+config = CONFIGS["dist_agent_1lm"]
+config["eval_dataloader_args"].object_names = [object_name]
+runner = Runner(config, print_config=False)
 runner.prepare()
 config = runner.config_dict
 exp = runner.exp
@@ -307,15 +250,16 @@ wrap_experiment_method(config, "run_episode", include_state=True)
 wrap_experiment_method(config, "pre_episode", include_state=True)
 wrap_experiment_method(config, "run_episode_steps", include_state=True)
 wrap_experiment_method(config, "post_episode", include_state=True)
-# wrap_dataset__getitem__(config)
+wrap_dataset__getitem__(config)
 
 runner.run()
 
-for msg in messages:
-    print(msg)
+# for msg in messages:
+# print(msg)
+images_messages = [m for m in messages if m["source"] == "dataset.__getitem__"]
 
-# images = []
-# for i, msg in enumerate(messages):
-#     im = msg["observation"]["agent_id_0"]["view_finder"]["rgba"]
-#     images.append(im)
-# imageio.mimsave("images.gif", images, duration=100)
+images = []
+for i, msg in enumerate(images_messages):
+    im = msg["msg"]["observation"]["agent_id_0"]["view_finder"]["rgba"]
+    images.append(im)
+imageio.mimsave(f"gifs/{object_name}.gif", images, duration=100)

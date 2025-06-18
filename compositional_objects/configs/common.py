@@ -53,7 +53,10 @@ from tbp.monty.simulators.habitat.environment import (
 ROOT_DIR = Path("~/tbp/results/compositional_objects").expanduser()
 PRETRAIN_DIR = ROOT_DIR / "pretrained_models"
 RESULTS_DIR = ROOT_DIR / "results"
-DATASET_DIR = Path(os.environ["MONTY_DATA"]) / "compositional_objects"
+DATASET_DIR = (
+    Path(os.environ.get("MONTY_DATA", "~/tbp/data")).expanduser()
+    / "compositional_objects"
+)
 
 # - Evaluation Parameters
 MAX_TOTAL_STEPS = 10_000

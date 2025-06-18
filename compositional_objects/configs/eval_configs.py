@@ -68,7 +68,7 @@ dist_agent_1lm = dict(
         model_name_or_path=str(PRETRAIN_DIR / "dist_agent_1lm/pretrained"),
         n_eval_epochs=len(DEBUG_ROTATIONS),
         max_total_steps=1,
-        max_eval_steps=1,
+        max_eval_steps=5,
     ),
     logging_config=EvalLoggingConfig(run_name="dist_agent_1lm"),
     monty_config=PatchAndViewMontyConfig(
@@ -89,7 +89,7 @@ dist_agent_1lm = dict(
     eval_dataloader_class=ED.InformedEnvironmentDataLoader,
     eval_dataloader_args=EnvironmentDataloaderPerObjectArgs(
         # object_names=["tbp_mug", "numenta_mug", "ycb_mug"],
-        object_names=["tbp_mug"],
+        object_names=["potted_meat_can"],
         object_init_sampler=PredefinedObjectInitializer(
             positions=[[0.0, 1.5, 0.0]], rotations=DEBUG_ROTATIONS
         ),
