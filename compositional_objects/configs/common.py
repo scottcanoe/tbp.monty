@@ -551,7 +551,6 @@ class DefaultMountConfig:
     height: Union[float, None] = 0.0
     position: List[Union[int, float]] = field(default_factory=lambda: [0.0, 1.5, 0.2])
     resolutions: List[List[Union[int, float]]] = field(
-        # default_factory=lambda: [[64, 64], [256, 256]]
         default_factory=lambda: [[64, 64], [512, 512]]
     )
     positions: List[List[Union[int, float]]] = field(
@@ -574,7 +573,7 @@ class DefaultEnvInitArgs:
         ]
     )
     objects: List[ObjectConfig] = field(
-        default_factory=lambda: [ObjectConfig("mug", position=(0.0, 1.5, -0.1))]
+        default_factory=lambda: [ObjectConfig("cube", position=(0.0, 1.5, -0.1))]
     )
     scene_id: Union[int, None] = field(default=None)
     seed: int = field(default=42)

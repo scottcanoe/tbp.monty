@@ -1,265 +1,434 @@
-import argparse
-import functools
-import inspect
+import fnmatch
+import json
 import logging
 import os
+import shutil
 import sys
+import threading
 import time
+from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Union
 
+import dask.array as da
 import imageio
+import magnum
+import matplotlib.colors as colors
+import matplotlib.pyplot as plt
 import numpy as np
+import quaternion
+import wrapt
+import zarr
+from configs import CONFIGS
+from model_utils import HabitatSceneDataset
+from run import main
 
-from compositional_objects.configs import CONFIGS
 from tbp.monty.frameworks.experiments import MontyExperiment
-from tbp.monty.frameworks.run import (
-    config_to_dict,
-    create_cmd_parser,
-    print_config,
-)
-from tbp.monty.frameworks.run_env import setup_env
+from tbp.monty.frameworks.models.buffer import BufferEncoder
+from tbp.monty.frameworks.run import config_to_dict
+
+BufferEncoder.register(magnum.Vector3, lambda v: [v.x, v.y, v.z])
+
+RESULTS_DIR = Path("~/tbp/results/compositional_objects/results").expanduser()
+os.environ["MAGNUM_LOG"] = "quiet"
+os.environ["HABITAT_SIM_LOG"] = "quiet"
+
+MAX_STEPS = 25
 
 
-class Runner:
+class PubSubSystem:
     """
-    This class is used to run the experiment.
+    A pub/sub system for peeking into processes by injecting publishers.
 
-    run_name:
-      - If provided via constructor, overrides the experiment config's `run_name`.
-      - If not provided...
-         - If started from CLI...
-           - If experiment config has a `run_name`, use it. Otherwise, use the
-             -e command line argument.
-         - If NOT started from CLI...
-           - If experiment config has a `run_name`, use it. Otherwise, raise an
-             error.
+    This system allows you to:
+    1. Subscribe to topics to receive messages
+    2. Publish messages to topics
+    3. Inject publishers into existing code using wrapt decorators
+    4. Filter and process messages in real-time
 
-    out_dir: Final output directory, reflecting the logging config's `output_dir`
-      and `run_name`.
+    Note: This system is purely event-driven and does not store messages.
     """
 
-    # Experiment configs/instance.
-    config: dict  # Original config used when creating the runner.
-    config_dict: Optional[dict] = None  # Config after preparing it and converting
-    exp: Optional[MontyExperiment] = None  # MontyExperiment instance.
+    def __init__(self):
+        self._subscribers: Dict[str, Set[Callable]] = defaultdict(set)
+        self._lock = threading.Lock()
 
-    # Output options
-    run_name: Optional[str] = None
-    out_dir: Optional[Path] = None
+        # Counters
+        self._message_id_counter = 0
 
-    # CLI-related information
-    _cli: bool = False
-    _cli_experiment: str = ""
-    _cli_quiet_habitat_logs: bool = True
+    def subscribe(self, topic: str, handler):
+        """Subscribe to a topic."""
+        with self._lock:
+            self._subscribers[topic].add(handler)
+
+    def unsubscribe(self, topic: str, handler):
+        """Unsubscribe from a topic."""
+        with self._lock:
+            self._subscribers[topic].discard(handler)
+
+    def publish(self, msg: dict):
+        """Publish a message to a topic."""
+        # if not self._enabled:
+        # return
+
+        topic = msg.get("topic", "")
+        # message_id = self._message_id_counter
+        # self._message_id_counter += 1
+        # time = time.time()
+
+        with self._lock:
+            # Notify subscribers
+            if topic in self._subscribers:
+                for handler in self._subscribers[topic]:
+                    try:
+                        handler(msg)
+                    except Exception as e:
+                        logging.error(f"Error in subscriber {handler} callback: {e}")
+
+
+# Global pub/sub instance
+_pubsub = PubSubSystem()
+
+
+def get_pubsub() -> PubSubSystem:
+    return _pubsub
+
+
+publish = _pubsub.publish
+subscribe = _pubsub.subscribe
+unsubscribe = _pubsub.unsubscribe
+
+
+"""
+================================================================================
+- Handlers/Subscribers
+"""
+
+
+class Filter:
+    def __init__(
+        self,
+        include: Optional[Iterable[str]] = None,
+        exclude: Optional[Iterable[str]] = None,
+    ):
+        self.include = list(np.atleast_1d(include).astype(object)) if include else []
+        self.exclude = list(np.atleast_1d(exclude).astype(object)) if exclude else []
+
+    def match(self, obj: Any, key: Optional[Callable] = None) -> bool:
+        string = key(obj) if key else obj
+        if self.include:
+            if not any(fnmatch.fnmatch(string, pattern) for pattern in self.include):
+                return False
+        if self.exclude:
+            if any(fnmatch.fnmatch(string, pattern) for pattern in self.exclude):
+                return False
+        return True
+
+    def filter_iterable(
+        self, iterable: Iterable[Any], key: Optional[Callable] = None
+    ) -> List[Any]:
+        return [item for item in iterable if self.match(item, key)]
+
+    def filter_dict(
+        self, dct: Dict[str, Any], key: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        return {k: v for k, v in dct.items() if self.match(v, key)}
+
+
+def maybe_rename_existing(path: os.PathLike) -> None:
+    path = Path(path).expanduser()
+    if path.exists():
+        if path.is_dir():
+            old_path = path.with_suffix(".old")
+            if old_path.exists():
+                shutil.rmtree(old_path)
+            path.rename(old_path)
+        else:
+            old_name = path.stem + "_old" + "".join(path.suffixes)
+            old_path = path.parent / old_name
+            if old_path.exists():
+                old_path.unlink()
+            path.rename(old_path)
+
+
+class ArrayGroupLogger:
+    """A callback class for writing array data to disk during an experiment.
+
+    Brought to you by ChatGPT.
+
+    Args:
+        base_dir: Path to a directory where each stream will be stored as a .zarr group.
+        compressor: Compression codec ID (e.g. 'zlib', 'blosc', 'zstd') or 'default' for none.
+    """
 
     def __init__(
         self,
-        config: Dict[str, dict],
-        run_name: Optional[str] = None,
-        print_config: bool = True,
+        path: os.PathLike,
+        include: Optional[Iterable[str]] = None,
+        exclude: Optional[Iterable[str]] = None,
+        compressor: Optional[str] = None,
+        adapter: Optional[Callable] = None,
     ):
-        self.config = config
-        self.run_name = run_name
-        self.print_config = print_config
+        self.path = Path(path).expanduser()
+        maybe_rename_existing(self.path)
+        self.path.mkdir(parents=True, exist_ok=True)
+        self.include = list(np.atleast_1d(include).astype(object)) if include else []
+        self.exclude = list(np.atleast_1d(exclude).astype(object)) if exclude else []
+        self.compressor = zarr.get_codec({"id": compressor}) if compressor else None
+        self.adapter = adapter
+        self.array_loggers = {}
 
-    @classmethod
-    def from_cli(
-        cls,
-        all_configs: Dict[str, dict],
-        run_name: Optional[str] = None,
-        print_config: bool = True,
-    ) -> "Runner":
-        cmd_parser = create_cmd_parser(experiments=list(all_configs.keys()))
-        cmd_args = cmd_parser.parse_args()
+    def receive(self, msg: dict):
+        """Receive an observation dict message from the pub/sub system."""
+        data = self.adapter(msg) if self.adapter else msg
+        self.write(data)
 
-        if len(cmd_args.experiments) != 1:
-            raise ValueError("Exactly one experiment must be specified")
-        experiment = cmd_args.experiments[0]
+    def write(self, data: dict):
+        data = self.filter(data)
+        for name, array in data.items():
+            try:
+                logger = self.array_loggers[name]
+            except KeyError:
+                path = self.path / f"{name}.zarr"
+                self.array_loggers[name] = ArrayLogger(path, self.compressor)
+                logger = self.array_loggers[name]
+            logger.write(array)
 
-        obj = cls(all_configs[experiment], run_name=run_name, print_config=print_config)
-        obj._cli = True
-        obj._cli_experiment = experiment
-        obj._cli_quiet_habitat_logs = cmd_args.quiet_habitat_logs
-
-        return obj
-
-    def prepare(self):
-        """Use this as "main" function when running monty experiments.
-
-        A typical project `run.py` shoud look like this::
-
-            # Load all experiment configurations from local project
-            from experiments import CONFIGS
-            from tbp.monty.frameworks.run import main
-
-            if __name__ == "__main__":
-                main(all_configs=CONFIGS)
-
-        Args:
-            all_configs: Dict containing all available experiment configurations.
-                Usually each project would have its own list of experiment
-                configurations
-            experiments: Optional list of experiments to run, used to bypass the
-                command line args
-        """
-
-        # Setup environment variables.
-        setup_env()
-
-        if self._cli_quiet_habitat_logs:
-            os.environ["MAGNUM_LOG"] = "quiet"
-            os.environ["HABITAT_SIM_LOG"] = "quiet"
-
-        self.config_dict = config_to_dict(self.config)
-
-        # Update run_name and output dir with experiment name
-        # NOTE: wandb args are further processed in monty_experiment
-
-        # Figure out run_name, accounting for CLI vs. code-based runs and overrides.
-        config_run_name = self.config_dict["logging_config"]["run_name"]
-        if self.run_name:
-            run_name = self.run_name
-        else:
-            if self._cli:
-                run_name = config_run_name or self._cli_experiment
-            else:
-                run_name = config_run_name
-
-        # Figure out output directory.
-        config_out_dir = self.config_dict["logging_config"]["output_dir"]
-        output_dir = os.path.join(config_out_dir, run_name)
-
-        # Finally, set the config's run_name and output_dir. Also create
-        # the output directory, and keep these attributes on this instance.
-        self.config_dict["logging_config"]["run_name"] = run_name
-        self.config_dict["logging_config"]["output_dir"] = output_dir
-        self.run_name = run_name
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-
-        # We're not running in parallel, this should always be False
-        self.config_dict["logging_config"]["log_parallel_wandb"] = False
-        if self.print_config:
-            print_config(self.config_dict)
-
-        # Finally, instantiate the experiment.
-        self.exp = self.config_dict["experiment_class"](self.config_dict)
-
-    def run(self):
-        if self.exp is None:
-            self.prepare()
-
-        start_time = time.time()
-        with self.exp as exp:
-            # This is where I'd like to do instance-level wrapping or
-            # wrapping class-level methods.
-            if exp.do_train:
-                print("---------training---------")
-                exp.train()
-
-            if exp.do_eval:
-                print("---------evaluating---------")
-                exp.evaluate()
-
-        secs_elapsed = time.time() - start_time
-        mins, secs = divmod(secs_elapsed, 60)
-        msg = f"Done running '{self.run_name}' in {int(mins)}m {int(secs)}s"
-        logging.info(msg)
-        print(msg)
+    def filter(self, data: dict) -> dict:
+        if self.include:
+            data = {k: v for k, v in data.items() if k in self.include}
+        if self.exclude:
+            data = {k: v for k, v in data.items() if k not in self.exclude}
+        return data
 
 
-def list_methods(cls):
-    methods = inspect.getmembers(cls, predicate=inspect.isfunction)
-    print("\nMethods of experiment class:")
-    for method_name, method in methods:
-        print(f"  {method_name}")
+class RawObservationLogger(ArrayGroupLogger):
+    def receive(self, data: Any):
+        data = self.adapter(data) if self.adapter else data
+        flat = {}
+        for agent_id in data:
+            for sensor_module_id in data[agent_id]:
+                for dset in data[agent_id][sensor_module_id]:
+                    name = f"{agent_id}.{sensor_module_id}.{dset}"
+                    flat[name] = data[agent_id][sensor_module_id][dset]
+
+        self.write(flat)
 
 
-messages = []
-sources = []
-timestamps = []
+class ArrayLogger:
+    def __init__(
+        self,
+        path: os.PathLike,
+        compressor: Optional[str] = None,
+        adapter: Optional[Callable] = None,
+    ):
+        self.path = path
+        maybe_rename_existing(self.path)
+        self.compressor = zarr.get_codec({"id": compressor}) if compressor else None
+        self.adapter = adapter
+        self.dataset = None
 
-messages = []
+    def receive(self, data):
+        if self.adapter:
+            data = self.adapter(data)
+        self.write(data)
 
-include_sources = [
-    # "experiment.run_epoch",
-    # "experiment.run_episode",
-]
+    def write(self, array: np.ndarray):
+        if self.dataset is None:
+            shape = (0,) + array.shape
+            chunks = (1,) + array.shape
+            self.dataset = zarr.open(
+                self.path,
+                mode="w",
+                shape=shape,
+                chunks=chunks,
+                dtype=array.dtype,
+                compressor=self.compressor,
+                # append_dim=0,
+            )
+        self.dataset.append(array[None, ...])
 
 
-def receiver(source: str, msg: dict):
-    if not include_sources or (include_sources and source in include_sources):
-        messages.append({"source": source, "time": time.time(), "msg": msg})
+class ActionLogger:
+    def __init__(self, path: os.PathLike, adapter: Optional[Callable] = None):
+        self.path = Path(path).expanduser()
+        maybe_rename_existing(self.path)
+        self.encoder = BufferEncoder()
+        self.adapter = adapter
+
+    def receive(self, data: Any):
+        action = self.adapter(data) if self.adapter else data
+        self.write(action)
+
+    def write(self, action: Any):
+        with open(self.path, "a") as f:
+            f.write(self.encoder.encode(action) + "\n")
 
 
-def wrap_experiment_method(exp, method_name, include_state: bool = False):
-    cls = exp.__class__ if isinstance(exp, MontyExperiment) else exp["experiment_class"]
+class ProprioceptiveStateLogger:
+    def __init__(self, path: os.PathLike, adapter: Optional[Callable] = None):
+        self.path = Path(path).expanduser()
+        maybe_rename_existing(self.path)
+        self.encoder = BufferEncoder()
+        self.adapter = adapter
+
+    def receive(self, data: Any):
+        state = self.adapter(data) if self.adapter else data
+        self.write(state)
+
+    def write(self, state: Any):
+        with open(self.path, "a") as f:
+            f.write(self.encoder.encode(state) + "\n")
+
+
+def wrap_method(cls, method_name: str, topic: str) -> None:
     method = getattr(cls, method_name)
+    if hasattr(method, "__wrapped__"):
+        print(f"Method {method_name} is already wrapped")
+        return
 
-    @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
-        if include_state:
-            msg = dict(self.state_dict())
-            msg.pop("time_stamp", None)
-        else:
-            msg = None
-
-        receiver(f"experiment.{method_name}", msg)
-        return method(self, *args, **kwargs)
-
-    setattr(cls, method_name, wrapper)
-
-
-def wrap_dataset__getitem__(exp):
-    if isinstance(exp, MontyExperiment):
-        cls = exp.dataset.__class__
-    else:
-        cls = exp["dataset_class"]
-
-    method = cls.__getitem__
-
-    @functools.wraps(method)
-    def wrapper(self, action):
-        observation, state = method(self, action)
+    @wrapt.decorator
+    def wrapper(wrapped, instance, args, kwargs):
+        result = wrapped(*args, **kwargs)
         msg = {
-            "action": action,
-            "observation": observation,
-            "state": state,
+            "topic": topic,
+            "wrapped": wrapped,
+            "instance": instance,
+            "args": args,
+            "kwargs": kwargs,
+            "result": result,
         }
-        receiver("dataset.__getitem__", msg)
-        return observation, state
+        publish(msg)
+        return result
 
-    cls.__getitem__ = wrapper
-
-object_name = "tbp_mug"
+    setattr(cls, method_name, wrapper(method))
 
 
-config = CONFIGS["dist_agent_1lm"]
-config["eval_dataloader_args"].object_names = [object_name]
-runner = Runner(config, print_config=False)
-runner.prepare()
-config = runner.config_dict
-exp = runner.exp
+def import_model(object_name: str):
+    object_dataset = HabitatSceneDataset(
+        Path(os.environ.get("MONTY_DATA", "~/tbp/data")).expanduser()
+        / "compositional_objects"
+    )
+    blender_dir = Path.home() / "Google Drive/My Drive/Blender/compositional_objects"
+    object_path = blender_dir / "objects" / f"{object_name}.glb"
+    object_dataset.import_model(object_path, replace=True)
 
 
-wrap_experiment_method(config, "run_epoch", include_state=True)
-wrap_experiment_method(config, "pre_epoch", include_state=False)
-wrap_experiment_method(config, "post_epoch", include_state=False)
-wrap_experiment_method(config, "run_episode", include_state=True)
-wrap_experiment_method(config, "pre_episode", include_state=True)
-wrap_experiment_method(config, "run_episode_steps", include_state=True)
-wrap_experiment_method(config, "post_episode", include_state=True)
-wrap_dataset__getitem__(config)
+def run_experiment(object_name: str):
+    config = CONFIGS["dist_agent_1lm"]
+    config["eval_dataloader_args"].object_names = [object_name]
+    config["logging_config"].run_name = object_name
+    config["logging_config"].output_dir = RESULTS_DIR
+    config["experiment_args"].max_train_steps = 1
+    config["experiment_args"].max_eval_steps = MAX_STEPS
+    config["monty_config"].monty_args.num_exploratory_steps = MAX_STEPS
+    config = config_to_dict(config)
 
-runner.run()
+    # Do all wrapping here.
+    dataset_cls = config["dataset_class"]
+    wrap_method(dataset_cls, "reset", "dataset.reset")
+    wrap_method(dataset_cls, "__getitem__", "dataset.__getitem__")
 
-# for msg in messages:
-# print(msg)
-images_messages = [m for m in messages if m["source"] == "dataset.__getitem__"]
+    # Do all pubsub subscriptions here.
+    pubsub = get_pubsub()
+    experiment_dir = (
+        Path(config["logging_config"]["output_dir"])
+        / config["logging_config"]["run_name"]
+    )
 
-images = []
-for i, msg in enumerate(images_messages):
-    im = msg["msg"]["observation"]["agent_id_0"]["view_finder"]["rgba"]
-    images.append(im)
-imageio.mimsave(f"gifs/{object_name}.gif", images, duration=100)
+    # # dataset.__getitem__ -> frame_logger.receive
+    raw_obs_logger = RawObservationLogger(experiment_dir / "raw_observations")
+    raw_obs_logger.include = [
+        "agent_id_0.patch.rgba",
+        "agent_id_0.patch.depth",
+        "agent_id_0.view_finder.rgba",
+        "agent_id_0.view_finder.depth",
+    ]
+    raw_obs_logger.adapter = lambda msg: msg["result"][0]
+    pubsub.subscribe("dataset.__getitem__", raw_obs_logger.receive)
+
+    action_logger = ActionLogger(experiment_dir / "actions.jsonl")
+    action_logger.adapter = lambda msg: msg["args"][0]
+    pubsub.subscribe("dataset.__getitem__", action_logger.receive)
+
+    proprioceptive_state_logger = ProprioceptiveStateLogger(
+        experiment_dir / "proprioceptive_states.jsonl"
+    )
+    proprioceptive_state_logger.adapter = lambda msg: msg["result"][1]
+    pubsub.subscribe("dataset.__getitem__", proprioceptive_state_logger.receive)
+
+    main(CONFIGS, experiments=["dist_agent_1lm"])
+    return experiment_dir
+
+
+def make_gifs(experiment_dir: Path, max_steps: Optional[int] = MAX_STEPS):
+    gifs_dir = experiment_dir / "gifs"
+    gifs_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_obs_dir = experiment_dir / "raw_observations"
+    dataset_paths = list(raw_obs_dir.glob("*.zarr"))
+
+    for path in dataset_paths:
+        if "rgba" in path.name:
+            print(f"Converting {path} to gif")
+            frames = zarr.open(path, mode="r")[:max_steps]
+        elif "depth" in path.name:
+            raw_frames = zarr.open(path, mode="r")[:max_steps]
+            norm = colors.Normalize(vmin=0, vmax=0.5)
+            scalar_map = plt.cm.ScalarMappable(norm=norm, cmap="gray_r")
+            frames = []
+            for i, raw_frame in enumerate(raw_frames):
+                frame = scalar_map.to_rgba(raw_frame)
+                frame = (frame * 255).astype(np.uint8)
+                frames.append(frame)
+        else:
+            continue
+
+        gif_name = path.name[: -len(".zarr")] + ".gif"
+        gif_path = gifs_dir / gif_name
+        imageio.mimsave(gif_path, frames, duration=100)
+
+
+def show_frame(experiment_dir: Path):
+    raw_obs_dir = experiment_dir / "raw_observations"
+    dataset_path = raw_obs_dir / "agent_id_0.view_finder.rgba.zarr"
+    frames = zarr.open(dataset_path, mode="r")[:]
+    array = frames[0]
+    fig, ax = plt.subplots()
+    ax.imshow(array)
+    ax.axis("off")
+    plt.show()
+
+
+def get_object_name(default: str):
+    """Run the experiment with command line arguments."""
+    import argparse
+
+    if sys.argv[0].endswith("ipykernel_launcher.py"):
+        return default
+
+    parser = argparse.ArgumentParser(description="Run compositional objects experiment")
+    parser.add_argument(
+        "object_name",
+        type=str,
+        nargs="?",
+        default="",
+        help="Name of object to use in experiment",
+    )
+    args = parser.parse_args()
+
+    if args.object_name:
+        return args.object_name
+    return default
+
+
+if __name__ == "__main__":
+    object_name = "015_cylinder_numenta_vert"
+
+    object_name = get_object_name(object_name)
+    # print(f"object_name: {object_name}")
+
+    import_model(object_name[4:])
+    experiment_dir = run_experiment(object_name)
+    make_gifs(experiment_dir)
+    show_frame(experiment_dir)

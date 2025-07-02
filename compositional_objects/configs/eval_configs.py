@@ -89,7 +89,7 @@ dist_agent_1lm = dict(
     eval_dataloader_class=ED.InformedEnvironmentDataLoader,
     eval_dataloader_args=EnvironmentDataloaderPerObjectArgs(
         # object_names=["tbp_mug", "numenta_mug", "ycb_mug"],
-        object_names=["potted_meat_can"],
+        object_names=[],
         object_init_sampler=PredefinedObjectInitializer(
             positions=[[0.0, 1.5, 0.0]], rotations=DEBUG_ROTATIONS
         ),
