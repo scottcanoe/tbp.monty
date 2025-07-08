@@ -423,7 +423,7 @@ def get_object_name(default: str):
 
 
 if __name__ == "__main__":
-    object_name = "015_cylinder_numenta_vert"
+    object_name = "028_mug_tbp_horz_bent"
 
     object_name = get_object_name(object_name)
     # print(f"object_name: {object_name}")
