@@ -37,8 +37,7 @@ MAX_STEPS = 25
 
 
 class PubSubSystem:
-    """
-    A pub/sub system for peeking into processes by injecting publishers.
+    """A pub/sub system for receiving messages and distributing them to handlers.
 
     This system allows you to:
     1. Subscribe to topics to receive messages
@@ -68,13 +67,8 @@ class PubSubSystem:
 
     def publish(self, msg: dict):
         """Publish a message to a topic."""
-        # if not self._enabled:
-        # return
 
         topic = msg.get("topic", "")
-        # message_id = self._message_id_counter
-        # self._message_id_counter += 1
-        # time = time.time()
 
         with self._lock:
             # Notify subscribers
@@ -88,15 +82,11 @@ class PubSubSystem:
 
 # Global pub/sub instance
 _pubsub = PubSubSystem()
+publish = _pubsub.publish
 
 
 def get_pubsub() -> PubSubSystem:
     return _pubsub
-
-
-publish = _pubsub.publish
-subscribe = _pubsub.subscribe
-unsubscribe = _pubsub.unsubscribe
 
 
 """
@@ -281,8 +271,27 @@ class ProprioceptiveStateLogger:
             f.write(self.encoder.encode(state) + "\n")
 
 
-def wrap_method(cls, method_name: str, topic: str) -> None:
+def wrap_method(
+    cls: type,
+    method_name: str,
+    topic: str,
+) -> None:
+    """Wrap a method so it publishes a message to the pub/sub system.
+
+    Args:
+        cls: The class to wrap.
+        method_name: The name of the method to wrap.
+        callback: A function that will be called with the message.
+        topic: The topic to publish the message to.
+
+    Returns:
+        None
+    """
     method = getattr(cls, method_name)
+
+    # Prevent a method from being wrapped more than once. This is not necessarily
+    # needed or desired, and there are maybe more sophisticated ways to do this, but
+    # this is a simple example of how you might avoid accidentally double-wrapping.
     if hasattr(method, "__wrapped__"):
         print(f"Method {method_name} is already wrapped")
         return
@@ -314,7 +323,8 @@ def import_model(object_name: str):
     object_dataset.import_model(object_path, replace=True)
 
 
-def run_experiment(object_name: str):
+def run_experiment(object_name: str) -> Path:
+    # Update the config with run names, objects to look at, etc.
     config = CONFIGS["dist_agent_1lm"]
     config["eval_dataloader_args"].object_names = [object_name]
     config["logging_config"].run_name = object_name
@@ -324,19 +334,20 @@ def run_experiment(object_name: str):
     config["monty_config"].monty_args.num_exploratory_steps = MAX_STEPS
     config = config_to_dict(config)
 
-    # Do all wrapping here.
-    dataset_cls = config["dataset_class"]
-    wrap_method(dataset_cls, "reset", "dataset.reset")
-    wrap_method(dataset_cls, "__getitem__", "dataset.__getitem__")
+    # Wrap methods we're interested in observing.
+    wrap_method(
+        cls=config["dataset_class"],
+        method_name="__getitem__",
+        topic="dataset.__getitem__",
+    )
 
-    # Do all pubsub subscriptions here.
+    # Add listeners/handlers.
     pubsub = get_pubsub()
     experiment_dir = (
         Path(config["logging_config"]["output_dir"])
         / config["logging_config"]["run_name"]
     )
 
-    # # dataset.__getitem__ -> frame_logger.receive
     raw_obs_logger = RawObservationLogger(experiment_dir / "raw_observations")
     raw_obs_logger.include = [
         "agent_id_0.patch.rgba",
@@ -357,7 +368,10 @@ def run_experiment(object_name: str):
     proprioceptive_state_logger.adapter = lambda msg: msg["result"][1]
     pubsub.subscribe("dataset.__getitem__", proprioceptive_state_logger.receive)
 
+    # Run the experiment.
     main(CONFIGS, experiments=["dist_agent_1lm"])
+
+    # Return the experiment directory.
     return experiment_dir
 
 
