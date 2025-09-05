@@ -275,6 +275,8 @@ class LookAtPolicy(BasePolicy):
         distance_horiz = np.sqrt(x_rot**2 + z_rot**2)
         down_amount = -np.degrees(np.arctan2(y_rot, distance_horiz))
 
+        self.driving_goal_state.info["attempted"] = True
+
         return [
             LookDown(agent_id=self.agent_id, rotation_degrees=down_amount),
             TurnLeft(agent_id=self.agent_id, rotation_degrees=left_amount),
@@ -297,6 +299,18 @@ def clean_motor_system_state(state: dict) -> dict:
     Returns:
         The cleaned motor system state.
     """
+    import magnum
+
+    def clean_position(pos: ArrayLike) -> np.ndarray:
+        if isinstance(pos, magnum.Vector3):
+            return np.array([pos.x, pos.y, pos.z])
+        return np.array(pos)
+
+    def clean_rotation(rot: ArrayLike) -> quaternion.quaternion:
+        if isinstance(rot, quaternion.quaternion):
+            return rot
+        return quaternion.quaternion(*rot)
+
     clean = {}
     for agent_id, agent_state in state.items():
         pos = agent_state["position"]
