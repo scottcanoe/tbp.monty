@@ -442,7 +442,7 @@ if __name__ == "__main__":
     object_name = get_object_name(object_name)
     # print(f"object_name: {object_name}")
 
-    import_model(object_name[4:])
+    # import_model(object_name[4:])
     experiment_dir = run_experiment(object_name)
     make_gifs(experiment_dir)
     show_frame(experiment_dir)
