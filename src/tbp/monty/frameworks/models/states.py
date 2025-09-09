@@ -368,5 +368,6 @@ def encode_goal_state(goal_state: GoalState) -> Dict[str, Any]:
     )
     return dct
 
+
 BufferEncoder.register(State, encode_state)
 BufferEncoder.register(GoalState, encode_goal_state)

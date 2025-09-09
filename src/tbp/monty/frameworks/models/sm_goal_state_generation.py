@@ -51,6 +51,7 @@ class OnObjectGsg(SmGoalStateGenerator):
         parent_sm: SensorModule,
         goal_tolerances: dict | None = None,
         save_telemetry: bool = False,
+        saliency_strategy: SaliencyStrategy | None = None,
         **kwargs,
     ) -> None:
         """Initialize the GSG.
@@ -95,7 +96,6 @@ class OnObjectGsg(SmGoalStateGenerator):
         rgba = obs["rgba"]
         depth = obs["depth"]
 
-
         # Update the decay field with the current sensed location.
         cur_loc = center_value(points)
         self.decay_field.add(cur_loc)
@@ -134,12 +134,33 @@ class OnObjectGsg(SmGoalStateGenerator):
 
         return goal_states
 
+# Specialized GSG classes with different saliency strategies
+class OnObjectGsgUniform(OnObjectGsg):
+    """OnObject GSG using spectral residual saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = UniformSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
+
 
 """
 -------------------------------------------------------------------------------
  - Return Inhibition
 -------------------------------------------------------------------------------
 """
+
 
 class DecayKernel:
     """Decay kernel represents a previously visited location.
@@ -222,18 +243,15 @@ class DecayKernel:
         """
         return np.exp(-self._distance(point) / self._lam_s)
 
-
     def reset(self) -> None:
         """Reset the kernel to its initial state."""
         self.t = 0
         self._expired = False
 
-
     def step(self) -> None:
         """Increment the step counter, and check if the kernel is expired."""
         self.t += 1
         self._expired = self.w_t() < self.w_t_min
-
 
     def _distance(self, point: np.ndarray) -> float | np.ndarray:
         """Compute the distance between the kernel's location and one or more points.
@@ -250,7 +268,6 @@ class DecayKernel:
         """
         axis = 1 if point.ndim > 1 else None
         return np.linalg.norm(self._location - point, axis=axis)
-
 
     def __call__(self, point: np.ndarray) -> float | np.ndarray:
         """Compute the time- and distance-dependent weight at a given point.

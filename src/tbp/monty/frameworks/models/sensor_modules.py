@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 class DetailedLoggingSM(SensorModule):
     """Sensor module that keeps track of raw observations for logging."""
 
-
     def __init__(
         self,
         sensor_module_id,

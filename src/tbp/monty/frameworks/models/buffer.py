@@ -681,7 +681,6 @@ class BufferEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
-
 BufferEncoder.register(np.generic, lambda obj: obj.item())
 BufferEncoder.register(np.ndarray, lambda obj: obj.tolist())
 BufferEncoder.register(Rotation, lambda obj: obj.as_euler("xyz", degrees=True))
