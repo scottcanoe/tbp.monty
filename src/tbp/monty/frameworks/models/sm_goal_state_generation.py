@@ -22,6 +22,11 @@ from tbp.monty.frameworks.models.goal_state_generation import (
     center_value,
     clean_raw_observation,
 )
+from tbp.monty.frameworks.models.saliency import (
+    SaliencyStrategy,
+    SpectralResidualSalience,
+    UniformSalience,
+)
 from tbp.monty.frameworks.models.states import GoalState
 
 logger = logging.getLogger(__name__)
@@ -57,11 +62,14 @@ class OnObjectGsg(SmGoalStateGenerator):
                 that can be used by the GSG when determining whether a goal-state is
                 achieved.
             save_telemetry: Whether to save telemetry data.
+            saliency_strategy: The saliency strategy to use for computing saliency maps.
+                If None, defaults to UniformSalience.
             **kwargs: Additional keyword arguments. Unused.
         """
         super().__init__(parent_sm, goal_tolerances, save_telemetry, **kwargs)
         self.decay_field = DecayField()
         self.rng = np.random.RandomState(42)
+        self.saliency_strategy = saliency_strategy or UniformSalience()
 
     def _generate_output_goal_state(
         self,
@@ -92,8 +100,8 @@ class OnObjectGsg(SmGoalStateGenerator):
         cur_loc = center_value(points)
         self.decay_field.add(cur_loc)
 
-        # Make salience map...
-        salience_map = np.ones_like(depth)
+        # Make salience map using strategy
+        salience_map = self.saliency_strategy.compute_saliency_map(obs)
 
         # Make a goal for each on-object pixel. Initialize confidence to salience map.
         goal_states = []
