@@ -106,15 +106,17 @@ class OnObjectGsg(SmGoalStateGenerator):
             )
             goal_states.append(g)
 
-        # Modify goal-state confidence values based on the decay field.
+        # Incorporate inhibition of return by weighting confidence values
+        # downward if we have recently visited points near a goal.
         decay_factor = 0.8
         for g in goal_states:
             val = self.decay_field(g.location)
             g.confidence -= decay_factor * val
 
         # Add some randomness to the goal-state confidence values.
+        randomness_factor = 0.1
         for g in goal_states:
-            g.confidence += self.rng.normal(loc=0, scale=0.1)
+            g.confidence += self.rng.normal(loc=0, scale=randomness_factor)
 
         # Normalize the goal-state confidence values before returning.
         normalize_confidence(goal_states)
