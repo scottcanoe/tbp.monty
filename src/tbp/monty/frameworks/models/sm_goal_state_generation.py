@@ -110,7 +110,6 @@ class OnObjectGsg(SmGoalStateGenerator):
         decay_factor = 0.8
         for g in goal_states:
             val = self.decay_field(g.location)
-            val = 1 - val
             g.confidence -= decay_factor * val
 
         # Add some randomness to the goal-state confidence values.
@@ -259,7 +258,7 @@ class DecayKernel:
             returned weight is a scalar. If `point` is a 2D array, the returned
             weight is a 1D array with shape (num_points,).
         """
-        return 1 - (self.w_t() * self.w_s(point))
+        return self.w_t() * self.w_s(point)
 
 
 class DecayField:
@@ -314,4 +313,4 @@ class DecayField:
 
 
 def combine_decay_values(data: np.ndarray) -> np.ndarray:
-    return np.min(data, axis=0)
+    return np.max(data, axis=0)
