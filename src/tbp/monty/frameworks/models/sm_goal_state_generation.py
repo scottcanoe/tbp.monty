@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -25,6 +25,18 @@ from tbp.monty.frameworks.models.goal_state_generation import (
 from tbp.monty.frameworks.models.states import GoalState
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_confidence(goal_states: Iterable[GoalState]) -> None:
+    """Normalize the confidence of the goal states."""
+    confidence_values = [goal_state.confidence for goal_state in goal_states]
+    max_confidence = max(confidence_values)
+    min_confidence = min(confidence_values)
+    for goal_state in goal_states:
+        goal_state.confidence = (goal_state.confidence - min_confidence) / (
+            max_confidence - min_confidence
+        )
+
 
 class OnObjectGsg(SmGoalStateGenerator):
     """Sensor module goal-state generator that finds targets in the image."""
@@ -49,7 +61,7 @@ class OnObjectGsg(SmGoalStateGenerator):
         """
         super().__init__(parent_sm, goal_tolerances, save_telemetry, **kwargs)
         self.decay_field = DecayField()
-        self.rng = np.random.default_rng(seed=42)
+        self.rng = np.random.RandomState(42)
 
     def _generate_output_goal_state(
         self,
@@ -72,35 +84,41 @@ class OnObjectGsg(SmGoalStateGenerator):
         obs = clean_raw_observation(raw_observation)
         points = obs["points"]
         on_obj = obs["on_object"]
-
-        # do salience...
         rgba = obs["rgba"]
         depth = obs["depth"]
 
-        # Make a goal for each on-object pixel. Their default confidence value is 1.0.
-        # It gets weighted downward later based on previously visited locations.
-        targets_pix = np.where(on_obj)
-        targets = [points[y, x] for y, x in zip(targets_pix[0], targets_pix[1])]
-        goal_states = []
-        for t in targets:
-            goal_states.append(self._create_goal_state(t))
 
         # Update the decay field with the current sensed location.
         cur_loc = center_value(points)
         self.decay_field.add(cur_loc)
 
+        # Make salience map...
+        salience_map = np.ones_like(depth)
+
+        # Make a goal for each on-object pixel. Initialize confidence to salience map.
+        goal_states = []
+        pix_rows, pix_cols = np.where(on_obj)
+        for row, col in zip(pix_rows, pix_cols):
+            g = self._create_goal_state(
+                location=points[row, col],
+                confidence=salience_map[row, col],
+                info={"row": row, "col": col},
+            )
+            goal_states.append(g)
+
         # Modify goal-state confidence values based on the decay field.
-        # Here we are adding randomness to help keep from always picking the goal
-        # state all the way to outermost edge of the object.
+        decay_factor = 0.8
         for g in goal_states:
             val = self.decay_field(g.location)
-            # The following rescaling by 0.8 + clipping is to keep goal states
-            # within [0, 1]. Alternatively, we could probably just normalize
-            # confidence values.
-            val = val * 0.8  # make some room for positive random values to be added
-            val = val + self.rng.normal(0, 0.1)
-            val = np.clip(val, 0, 1)
-            g.confidence *= val
+            val = 1 - val
+            g.confidence -= decay_factor * val
+
+        # Add some randomness to the goal-state confidence values.
+        for g in goal_states:
+            g.confidence += self.rng.normal(loc=0, scale=0.1)
+
+        # Normalize the goal-state confidence values before returning.
+        normalize_confidence(goal_states)
 
         # Step the decay field at the end o this function.
         self.decay_field.step()
