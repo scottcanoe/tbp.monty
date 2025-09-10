@@ -9,6 +9,7 @@
 # https://opensource.org/licenses/MIT.
 
 from .bio import BioSalience
+from .itti_koch_salience import IttiKochSalience
 from .minimum_barrier_salience import MinimumBarrierSalience
 from .robust_background_salience import RobustBackgroundSalience
 from .salience_strategy import SaliencyStrategy
@@ -22,4 +23,5 @@ __all__ = [
     "MinimumBarrierSalience",
     "RobustBackgroundSalience",
     "BioSalience",
+    "IttiKochSalience",
 ]
