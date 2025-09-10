@@ -24,6 +24,7 @@ from tbp.monty.frameworks.models.goal_state_generation import (
 )
 from tbp.monty.frameworks.models.saliency import (
     BioSalience,
+    IttiKochSalience,
     MinimumBarrierSalience,
     RobustBackgroundSalience,
     SaliencyStrategy,
@@ -218,8 +219,9 @@ class OnObjectGsgRobustBackground(OnObjectGsg):
             **kwargs,
         )
 
+
 class OnObjectGsgBio(OnObjectGsg):
-    """OnObject GSG using uniform saliency."""
+    """OnObject GSG using Bio saliency."""
 
     def __init__(
         self,
@@ -236,6 +238,28 @@ class OnObjectGsgBio(OnObjectGsg):
             saliency_strategy=saliency_strategy,
             **kwargs,
         )
+
+
+class OnObjectGsgIttiKoch(OnObjectGsg):
+    """OnObject GSG using Itti Koch saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = IttiKochSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
+
+
 """
 -------------------------------------------------------------------------------
  - Return Inhibition
@@ -427,4 +451,3 @@ class DecayField:
 
 def combine_decay_values(data: np.ndarray) -> np.ndarray:
     return np.max(data, axis=0)
-
