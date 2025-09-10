@@ -11,5 +11,13 @@
 from .salience_strategy import SaliencyStrategy
 from .spectral_residual_salience import SpectralResidualSalience
 from .uniform_salience import UniformSalience
+from .minimum_barrier_salience import MinimumBarrierSalience
+from .robust_background_salience import RobustBackgroundSalience
 
-__all__ = ["SaliencyStrategy", "UniformSalience", "SpectralResidualSalience"]
+__all__ = [
+    "SaliencyStrategy",
+    "UniformSalience",
+    "SpectralResidualSalience",
+    "MinimumBarrierSalience",
+    "RobustBackgroundSalience",
+]

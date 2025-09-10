@@ -26,6 +26,8 @@ from tbp.monty.frameworks.models.saliency import (
     SaliencyStrategy,
     SpectralResidualSalience,
     UniformSalience,
+    MinimumBarrierSalience,
+    RobustBackgroundSalience,
 )
 from tbp.monty.frameworks.models.states import GoalState
 
@@ -134,9 +136,10 @@ class OnObjectGsg(SmGoalStateGenerator):
 
         return goal_states
 
+
 # Specialized GSG classes with different saliency strategies
 class OnObjectGsgUniform(OnObjectGsg):
-    """OnObject GSG using spectral residual saliency."""
+    """OnObject GSG using uniform saliency."""
 
     def __init__(
         self,
@@ -146,6 +149,66 @@ class OnObjectGsgUniform(OnObjectGsg):
         **kwargs,
     ) -> None:
         saliency_strategy = UniformSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
+
+
+class OnObjectGsgSpectralResidual(OnObjectGsg):
+    """OnObject GSG using spectral residual saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = SpectralResidualSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
+
+
+class OnObjectGsgMinimumBarrier(OnObjectGsg):
+    """OnObject GSG using minimum barrier saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = MinimumBarrierSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
+
+
+class OnObjectGsgRobustBackground(OnObjectGsg):
+    """OnObject GSG using robust background saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = RobustBackgroundSalience()
         super().__init__(
             parent_sm=parent_sm,
             goal_tolerances=goal_tolerances,
