@@ -43,7 +43,6 @@ class FlattenTest(unittest.TestCase):
 
 
 class SortStatesByConfidenceTest(unittest.TestCase):
-
     def test_empty(self) -> None:
         """Test that empty iterables are sorted to an empty list."""
         self.assertEqual(sort_states_by_confidence([]), [])
@@ -78,7 +77,6 @@ class SortStatesByConfidenceTest(unittest.TestCase):
 
 
 class GoalStateSelectorTest(unittest.TestCase):
-
     def test_select_empty_list(self) -> None:
         """Test that empty iterables result in None."""
         gss = GoalStateSelector()
@@ -122,8 +120,8 @@ class GoalStateSelectorTest(unittest.TestCase):
                 [
                     gs_nan,
                     gs_high,
-                ]
-            ]
+                ],
+            ],
         ]
         gss = GoalStateSelector()
         self.assertEqual(gss.select(goal_states), gs_high)
@@ -164,4 +162,3 @@ def make_dummy_goal_state(**kwargs) -> GoalState:
 
 if __name__ == "__main__":
     unittest.main()
-

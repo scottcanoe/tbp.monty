@@ -22,6 +22,13 @@ from tbp.monty.frameworks.models.goal_state_generation import (
     center_value,
     clean_raw_observation,
 )
+from tbp.monty.frameworks.models.saliency import (
+    SaliencyStrategy,
+    SpectralResidualSalience,
+    UniformSalience,
+    MinimumBarrierSalience,
+    RobustBackgroundSalience,
+)
 from tbp.monty.frameworks.models.states import GoalState
 
 logger = logging.getLogger(__name__)
@@ -46,6 +53,7 @@ class OnObjectGsg(SmGoalStateGenerator):
         parent_sm: SensorModule,
         goal_tolerances: dict | None = None,
         save_telemetry: bool = False,
+        saliency_strategy: SaliencyStrategy | None = None,
         **kwargs,
     ) -> None:
         """Initialize the GSG.
@@ -57,11 +65,14 @@ class OnObjectGsg(SmGoalStateGenerator):
                 that can be used by the GSG when determining whether a goal-state is
                 achieved.
             save_telemetry: Whether to save telemetry data.
+            saliency_strategy: The saliency strategy to use for computing saliency maps.
+                If None, defaults to UniformSalience.
             **kwargs: Additional keyword arguments. Unused.
         """
         super().__init__(parent_sm, goal_tolerances, save_telemetry, **kwargs)
         self.decay_field = DecayField()
         self.rng = np.random.RandomState(42)
+        self.saliency_strategy = saliency_strategy or UniformSalience()
 
     def _generate_output_goal_state(
         self,
@@ -87,13 +98,12 @@ class OnObjectGsg(SmGoalStateGenerator):
         rgba = obs["rgba"]
         depth = obs["depth"]
 
-
         # Update the decay field with the current sensed location.
         cur_loc = center_value(points)
         self.decay_field.add(cur_loc)
 
-        # Make salience map...
-        salience_map = np.ones_like(depth)
+        # Make salience map using strategy
+        salience_map = self.saliency_strategy.compute_saliency_map(obs)
 
         # Make a goal for each on-object pixel. Initialize confidence to salience map.
         goal_states = []
@@ -127,11 +137,93 @@ class OnObjectGsg(SmGoalStateGenerator):
         return goal_states
 
 
+# Specialized GSG classes with different saliency strategies
+class OnObjectGsgUniform(OnObjectGsg):
+    """OnObject GSG using uniform saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = UniformSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
+
+
+class OnObjectGsgSpectralResidual(OnObjectGsg):
+    """OnObject GSG using spectral residual saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = SpectralResidualSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
+
+
+class OnObjectGsgMinimumBarrier(OnObjectGsg):
+    """OnObject GSG using minimum barrier saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = MinimumBarrierSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
+
+
+class OnObjectGsgRobustBackground(OnObjectGsg):
+    """OnObject GSG using robust background saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = RobustBackgroundSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
+
+
 """
 -------------------------------------------------------------------------------
  - Return Inhibition
 -------------------------------------------------------------------------------
 """
+
 
 class DecayKernel:
     """Decay kernel represents a previously visited location.
@@ -214,18 +306,15 @@ class DecayKernel:
         """
         return np.exp(-self._distance(point) / self._lam_s)
 
-
     def reset(self) -> None:
         """Reset the kernel to its initial state."""
         self.t = 0
         self._expired = False
 
-
     def step(self) -> None:
         """Increment the step counter, and check if the kernel is expired."""
         self.t += 1
         self._expired = self.w_t() < self.w_t_min
-
 
     def _distance(self, point: np.ndarray) -> float | np.ndarray:
         """Compute the distance between the kernel's location and one or more points.
@@ -242,7 +331,6 @@ class DecayKernel:
         """
         axis = 1 if point.ndim > 1 else None
         return np.linalg.norm(self._location - point, axis=axis)
-
 
     def __call__(self, point: np.ndarray) -> float | np.ndarray:
         """Compute the time- and distance-dependent weight at a given point.
