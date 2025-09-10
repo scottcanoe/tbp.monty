@@ -8,11 +8,12 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT.
 
+from .bio import BioSalience
+from .minimum_barrier_salience import MinimumBarrierSalience
+from .robust_background_salience import RobustBackgroundSalience
 from .salience_strategy import SaliencyStrategy
 from .spectral_residual_salience import SpectralResidualSalience
 from .uniform_salience import UniformSalience
-from .minimum_barrier_salience import MinimumBarrierSalience
-from .robust_background_salience import RobustBackgroundSalience
 
 __all__ = [
     "SaliencyStrategy",
@@ -20,4 +21,5 @@ __all__ = [
     "SpectralResidualSalience",
     "MinimumBarrierSalience",
     "RobustBackgroundSalience",
+    "BioSalience",
 ]

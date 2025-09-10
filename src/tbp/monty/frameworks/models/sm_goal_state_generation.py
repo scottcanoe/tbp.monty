@@ -23,11 +23,12 @@ from tbp.monty.frameworks.models.goal_state_generation import (
     clean_raw_observation,
 )
 from tbp.monty.frameworks.models.saliency import (
+    BioSalience,
+    MinimumBarrierSalience,
+    RobustBackgroundSalience,
     SaliencyStrategy,
     SpectralResidualSalience,
     UniformSalience,
-    MinimumBarrierSalience,
-    RobustBackgroundSalience,
 )
 from tbp.monty.frameworks.models.states import GoalState
 
@@ -118,13 +119,13 @@ class OnObjectGsg(SmGoalStateGenerator):
 
         # Incorporate inhibition of return by weighting confidence values
         # downward if we have recently visited points near a goal.
-        decay_factor = 0.8
+        decay_factor = 0.75
         for g in goal_states:
             val = self.decay_field(g.location)
             g.confidence -= decay_factor * val
 
         # Add some randomness to the goal-state confidence values.
-        randomness_factor = 0.1
+        randomness_factor = 0.05
         for g in goal_states:
             g.confidence += self.rng.normal(loc=0, scale=randomness_factor)
 
@@ -217,7 +218,24 @@ class OnObjectGsgRobustBackground(OnObjectGsg):
             **kwargs,
         )
 
+class OnObjectGsgBio(OnObjectGsg):
+    """OnObject GSG using uniform saliency."""
 
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = BioSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
 """
 -------------------------------------------------------------------------------
  - Return Inhibition
@@ -234,14 +252,16 @@ class DecayKernel:
     def __init__(
         self,
         location: ArrayLike,
-        tau_t: float = 5.0,
-        tau_s: float = 0.025,
+        tau_t: float = 10.0,
+        tau_s: float = 0.01,
+        cutoff_s: float | None = 0.02,
         w_t_min: float = 0.1,
         t: int = 0,
     ):
         self.location = location
         self.tau_t = tau_t
         self.tau_s = tau_s
+        self.cutoff_s = cutoff_s
         self.w_t_min = w_t_min
         self.t = t
         self._expired = False
@@ -304,7 +324,10 @@ class DecayKernel:
             returned weight is a scalar. If `point` is a 2D array, the returned
             weight is a 1D array with shape (num_points,).
         """
-        return np.exp(-self._distance(point) / self._lam_s)
+        dist = self._distance(point)
+        if self.cutoff_s is not None and dist > self.cutoff_s:
+            return 0
+        return np.exp(-dist / self._lam_s)
 
     def reset(self) -> None:
         """Reset the kernel to its initial state."""
@@ -404,3 +427,4 @@ class DecayField:
 
 def combine_decay_values(data: np.ndarray) -> np.ndarray:
     return np.max(data, axis=0)
+
