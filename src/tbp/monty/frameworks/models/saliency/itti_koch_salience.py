@@ -20,7 +20,7 @@ class IttiKochSalience:
         weight_color=0.33,
         weight_orientation=0.33,
         default_step_local=16,
-        pyramid_levels=4,
+        pyramid_levels=9,
     ):
         self.width = width
         self.height = height
