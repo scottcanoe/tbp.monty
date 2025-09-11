@@ -49,6 +49,8 @@ from tbp.monty.frameworks.models.displacement_matching import DisplacementGraphL
 from tbp.monty.frameworks.models.motor_policies import NaiveScanPolicy
 from tbp.monty.frameworks.models.sensor_modules import (
     DetailedLoggingSM,
+    FeatureChangeSM,
+    HabitatDistantPatchSM,
     HabitatSurfacePatchSM,
 )
 from tbp.monty.simulators.habitat.configs import (
