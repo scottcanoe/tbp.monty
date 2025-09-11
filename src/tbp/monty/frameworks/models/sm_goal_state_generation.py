@@ -101,8 +101,10 @@ class OnObjectGsg(SmGoalStateGenerator):
         depth = obs["depth"]
 
         # Update the decay field with the current sensed location.
-        cur_loc = center_value(points)
-        self.decay_field.add(cur_loc)
+        center_depth = depth[rgba.shape[0] // 2, rgba.shape[1] // 2]
+        if center_depth < 0.99:
+            cur_loc = center_value(points)
+            self.decay_field.add(cur_loc)
 
         # Make salience map using strategy
         salience_map = self.saliency_strategy.compute_saliency_map(obs)
