@@ -1,4 +1,3 @@
-
 # Copyright 2025 Thousand Brains Project
 #
 # Copyright may exist in Contributors' modifications

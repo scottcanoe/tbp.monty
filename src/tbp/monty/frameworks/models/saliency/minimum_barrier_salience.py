@@ -230,20 +230,20 @@ class MinimumBarrierSalience:
                 sal = sal / sal_max + u_final / u_max_final
 
         # Apply center bias
-        sal = sal / np.max(sal) if np.max(sal) > 0 else sal
+        # sal = sal / np.max(sal) if np.max(sal) > 0 else sal
 
-        s = np.mean(sal)
-        delta = self.alpha * math.sqrt(s)
+        # s = np.mean(sal)
+        # delta = self.alpha * math.sqrt(s)
 
-        xv, yv = np.meshgrid(np.arange(sal.shape[1]), np.arange(sal.shape[0]))
-        w, h = sal.shape
-        w2 = w / 2.0
-        h2 = h / 2.0
+        # xv, yv = np.meshgrid(np.arange(sal.shape[1]), np.arange(sal.shape[0]))
+        # w, h = sal.shape
+        # w2 = w / 2.0
+        # h2 = h / 2.0
 
-        C = 1 - np.sqrt(np.power(xv - h2, 2) + np.power(yv - w2, 2)) / math.sqrt(
-            np.power(w2, 2) + np.power(h2, 2)
-        )
-        sal = sal * C
+        # C = 1 - np.sqrt(np.power(xv - h2, 2) + np.power(yv - w2, 2)) / math.sqrt(
+        #     np.power(w2, 2) + np.power(h2, 2)
+        # )
+        # sal = sal * C
 
         # Apply contrast enhancement
         sal = sal / np.max(sal) if np.max(sal) > 0 else sal

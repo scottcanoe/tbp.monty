@@ -669,16 +669,41 @@ class IttiKochSalience:
 
         return OCM
 
-    def compute_saliency(self, src):
+    def compute_saliency_map(self, obs):
         """
-        Compute Itti-Koch saliency map for the given image.
+        Compute Itti-Koch saliency map for the given observation.
 
         Args:
-            src: Input image as numpy array (BGR format)
+            obs: Observation dictionary containing 'rgba' key with image data
 
         Returns:
-            sal: Saliency map normalized to [0, 255]
+            sal: Saliency map normalized to [0, 1]
         """
+        # Extract image from observation dictionary
+        if isinstance(obs, dict):
+            if "rgba" in obs:
+                rgba_img = obs["rgba"]
+                # Extract RGB channels and convert to BGR
+                if rgba_img.shape[-1] >= 3:
+                    rgb_img = rgba_img[:, :, :3]
+                else:
+                    raise ValueError("Insufficient color channels in RGBA image")
+                
+                # Ensure proper data type and range
+                if rgb_img.max() <= 1.0:
+                    # Convert from [0,1] to [0,255]
+                    rgb_img = (rgb_img * 255).astype(np.uint8)
+                else:
+                    rgb_img = rgb_img.astype(np.uint8)
+                
+                # Convert RGB to BGR for OpenCV
+                src = rgb_img[:, :, ::-1]  # RGB to BGR
+            else:
+                raise ValueError("No 'rgba' key found in observation dictionary")
+        else:
+            # Legacy support: if src is already an image array
+            src = obs
+        
         # Get image dimensions
         size = src.shape
         width = size[1]
@@ -722,11 +747,14 @@ class IttiKochSalience:
             smoothed_SM, (width, height), interpolation=cv2.INTER_NEAREST
         )
 
-        # Convert to [0, 255] range
-        sal = (self.SM * 255).astype(np.uint8)
-        return sal
+        # Normalize to [0, 1] range
+        if np.max(self.SM) > 0:
+            sal = self.SM / np.max(self.SM)
+        else:
+            sal = self.SM
+        return sal.astype(np.float32)
 
-    def compute_saliency_from_path(self, img_path):
+    def compute_saliency_map_from_path(self, img_path):
         """
         Compute saliency map from image file path.
 
@@ -734,7 +762,7 @@ class IttiKochSalience:
             img_path: Path to input image file
 
         Returns:
-            sal: Saliency map normalized to [0, 255]
+            sal: Saliency map normalized to [0, 1]
         """
         img = cv2.imread(img_path)
-        return self.compute_saliency(img)
+        return self.compute_saliency_map(img)
