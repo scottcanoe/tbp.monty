@@ -534,6 +534,10 @@ class DetailedGraphMatchingLogger(BasicGraphMatchingLogger):
                 model.motor_system._policy.action_details
             )
 
+        # Handle motor system telemetry.
+        if model.motor_system.save_telemetry:
+            buffer_data["motor_system"]["telemetry"] = model.motor_system.telemetry
+
         self.data["DETAILED"][episodes] = buffer_data
 
 
