@@ -330,15 +330,15 @@ class LookAtPolicy(BasePolicy):
         # Create actions to return to the the motor system.
         yaw_degrees = np.degrees(yaw_a)
         if yaw_degrees >= 0:
-            turn = TurnLeft(agent_id=self.agent_id, rotation_degrees=-yaw_degrees)
-        else:
             turn = TurnRight(agent_id=self.agent_id, rotation_degrees=yaw_degrees)
+        else:
+            turn = TurnLeft(agent_id=self.agent_id, rotation_degrees=-yaw_degrees)
 
         pitch_degrees = np.degrees(pitch_s)
         if pitch_degrees >= 0:
-            look = LookDown(agent_id=self.agent_id, rotation_degrees=-pitch_degrees)
-        else:
             look = LookUp(agent_id=self.agent_id, rotation_degrees=pitch_degrees)
+        else:
+            look = LookDown(agent_id=self.agent_id, rotation_degrees=-pitch_degrees)
 
         # For logging purposes only.
         self.driving_goal_state.info["attempted"] = True
