@@ -63,6 +63,7 @@ class GraphGoalStateGenerator(GoalStateGenerator):
                 achieved.
             **kwargs: Additional keyword arguments. Unused.
         """
+        super().__init__(**kwargs)
         self.parent_lm = parent_lm
         if goal_tolerances is None:
             self.goal_tolerances = dict(
