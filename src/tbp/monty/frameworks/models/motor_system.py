@@ -314,13 +314,11 @@ class LookAtPolicy(BasePolicy):
         t_w = np.asarray(self.driving_goal_state.location)
         t_a = agent_to_world.inv()(t_w)
 
-        # Compute the y-axis-angle coordinate of the target relative to the agent.
-        # Note: left of the midline is negative.
+        # Compute the target's azimuth, relative to the agent.
         yaw_a = np.arctan2(t_a[0], -t_a[2])
 
-        # Compute x-axis-angle coordinate of the target. We do this relative to the
-        # agent but then subtract the sensor's current pitch (note that we can
-        # add/subtract x-axis agent and sensor coordinates since they're aligned).
+        # Compute the target's elevation, relative to the agent. Then subtract the
+        # sensor's current pitch to get a pitch delta effective for the sensor.
         pitch_a = np.arctan2(t_a[1], np.sqrt(t_a[0] ** 2 + t_a[2] ** 2))
         sensor_pitch_a = sensor_rot_a.as_euler("xyz")[0]
         pitch_s = pitch_a - sensor_pitch_a
