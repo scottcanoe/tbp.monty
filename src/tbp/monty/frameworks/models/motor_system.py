@@ -303,12 +303,13 @@ class LookAtPolicy(BasePolicy):
 
         # Collect necessary agent and sensor pose information.
         # Subscripts: w=world, a=agent, s=sensor.
-        agent_pos_w = state[f"{self.agent_id}"]["position"]
-        agent_rot_w = as_scipy_rotation(state[f"{self.agent_id}"]["rotation"])
-        agent_to_world = RigidTransform(agent_pos_w, agent_rot_w)
-        sensor_rot_a = as_scipy_rotation(
-            state[f"{self.agent_id}"]["sensors"][f"{self.sensor_module_id}"]["rotation"]
-        )
+        agent_dict = state[self.agent_id]
+        agent_pos_w = agent_dict["position"]
+        agent_rot_w = as_scipy_rotation(agent_dict["rotation"])
+        agent_to_world = RigidTransform.from_components(agent_pos_w, agent_rot_w)
+
+        sensor_dict = agent_dict["sensors"][self.sensor_module_id]
+        sensor_rot_a = as_scipy_rotation(sensor_dict["rotation"])
 
         # Get the target location in world and agent coordinates.
         t_w = np.asarray(self.driving_goal_state.location)
@@ -319,9 +320,12 @@ class LookAtPolicy(BasePolicy):
 
         # Compute the target's elevation, relative to the agent. Then subtract the
         # sensor's current pitch to get a pitch delta effective for the sensor.
-        pitch_a = np.arctan2(t_a[1], np.sqrt(t_a[0] ** 2 + t_a[2] ** 2))
+        pitch_a = np.arctan2(t_a[1], np.hypot(t_a[0], t_a[2]))
         sensor_pitch_a = sensor_rot_a.as_euler("xyz")[0]
         pitch_s = pitch_a - sensor_pitch_a
+        # For some reason, the above is more stable and accurate than the below:
+        # t_s = sensor_to_agent.inv()(t_a)
+        # pitch_s = np.arctan2(t_s[1], np.hypot(t_s[0], t_s[2]))
 
         # Create actions to return to the the motor system.
         yaw_degrees = np.degrees(yaw_a)
