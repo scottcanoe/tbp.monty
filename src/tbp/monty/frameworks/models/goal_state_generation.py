@@ -73,11 +73,23 @@ class GraphGoalStateGenerator(GoalStateGenerator):
             self.goal_tolerances = goal_tolerances
 
         self.reset()
-        self.set_driving_goal_state(self._generate_none_goal_state())
 
     # =============== Public Interface Functions ===============
 
     # ------------------ Getters & Setters ---------------------
+    @property
+    def enabled(self) -> bool:
+        """See if the GSG is enabled."""
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        """Enable or disable the GSG."""
+        assert isinstance(value, bool), "Enabled must be a boolean"
+        self._enabled = value
+        if not self._enabled:
+            self.set_driving_goal_state(self._generate_none_goal_state())
+            self._set_output_goal_state(self._generate_none_goal_state())
 
     def reset(self):
         """Reset any stored attributes of the GSG."""
@@ -88,6 +100,7 @@ class GraphGoalStateGenerator(GoalStateGenerator):
                 goal_states=[],
                 matching_step_when_output_goal_set=[],
                 goal_state_achieved=[],
+                enabled=[],
             ),
             update_time=False,
             append=False,
@@ -153,6 +166,9 @@ class GraphGoalStateGenerator(GoalStateGenerator):
         Check whether the GSG's output and driving goal-states are achieved, and
         generate a new output goal-state if necessary.
         """
+        if not self.enabled:
+            return
+
         output_goal_achieved = self._check_output_goal_state_achieved(observations)
 
         self._update_gsg_logging(output_goal_achieved)
@@ -458,6 +474,7 @@ class GraphGoalStateGenerator(GoalStateGenerator):
                     goal_states=self.output_goal_state,
                     matching_step_when_output_goal_set=match_step,
                     goal_state_achieved=output_goal_achieved,
+                    enabled=self.enabled,
                 ),
                 update_time=False,
                 append=True,
@@ -1107,6 +1124,7 @@ class SmGoalStateGenerator(GoalStateGenerator):
             save_telemetry: Whether to save telemetry data.
             **kwargs: Additional keyword arguments. Unused.
         """
+        super().__init__(**kwargs)
         self.parent_sm = parent_sm
         if goal_tolerances is None:
             self.goal_tolerances = {
@@ -1117,6 +1135,20 @@ class SmGoalStateGenerator(GoalStateGenerator):
 
         self.save_telemetry = save_telemetry
         self.reset()
+
+    @property
+    def enabled(self) -> bool:
+        """See if the GSG is enabled."""
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        """Enable or disable the GSG."""
+        assert isinstance(value, bool), "Enabled must be a boolean"
+        self._enabled = value
+        if not self._enabled:
+            self.set_driving_goal_state(None)
+            self.output_goal_state = []
 
     def reset(self):
         """Reset any stored attributes of the GSG."""
@@ -1147,6 +1179,9 @@ class SmGoalStateGenerator(GoalStateGenerator):
             raw_observation: The parent sensor module's raw observations.
             processed_observation: The parent sensor module's processed observations.
         """
+        if not self.enabled:
+            return
+
         self._set_achievement_status(raw_observation, processed_observation)
 
         # TODO: Logging.
@@ -1154,12 +1189,33 @@ class SmGoalStateGenerator(GoalStateGenerator):
             raw_observation, processed_observation
         )
         if self.save_telemetry:
-            self.telemetry.append(
-                SmGoalStateGeneratorTelemetry(
-                    driving_goal_state=self.driving_goal_state,
-                    output_goal_state=self.output_goal_state,
-                )
+            tel = SmGoalStateGeneratorTelemetry(
+                driving_goal_state=self.driving_goal_state,
+                output_goal_state=self.output_goal_state,
             )
+            self.telemetry.append(tel)
+
+    def _create_goal_state(
+        self,
+        location: np.ndarray,
+        morphological_features: Optional[Dict[str, Any]] = None,
+        non_morphological_features: Optional[Dict[str, Any]] = None,
+        confidence: float = 1.0,
+        use_state: bool = True,
+        info: Optional[Dict[str, Any]] = None,
+    ) -> GoalState:
+        """Create a goal state with default values."""
+        return GoalState(
+            location=location,
+            morphological_features=morphological_features,
+            non_morphological_features=non_morphological_features,
+            confidence=confidence,
+            use_state=use_state,
+            sender_id=self.parent_sm.sensor_module_id,
+            sender_type="GSG",
+            goal_tolerances=self.goal_tolerances,
+            info=info,
+        )
 
     def _generate_output_goal_state(
         self,
@@ -1195,7 +1251,7 @@ class SmGoalStateGenerator(GoalStateGenerator):
             if isinstance(generated, GoalState):
                 generated = [generated]
             for gs in generated:
-                # TODO: only check achieved when attempted.
+                # TODO: only check achieved when attempted?
                 gs.info["achieved"] = self._goal_state_achieved(
                     gs, raw_observation, processed_observation
                 )
@@ -1215,4 +1271,61 @@ class SmGoalStateGenerator(GoalStateGenerator):
         Returns:
             Whether the goal state is within the goal tolerances.
         """
-        return False
+        if not self.goal_tolerances:
+            return True
+
+        gridded = clean_raw_observation(raw_observation)
+
+        for name, tol in goal_state.goal_tolerances.items():
+            if name == "location":
+                points = gridded["points"]
+                center_loc = center_value(points)
+                if np.linalg.norm(goal_state.location - center_loc) > tol:
+                    return False
+            else:
+                raise NotImplementedError(f"Goal tolerance {name} not implemented")
+
+        return True
+
+
+def center_value(arr: np.ndarray) -> np.generic | np.ndarray:
+    """Convenience function for extracting the value at the center of an image."""
+    n_rows, n_cols = arr.shape[0], arr.shape[1]
+    return arr[n_rows // 2, n_cols // 2]
+
+
+def clean_raw_observation(raw_observation: dict) -> dict[str, np.ndarray]:
+    """Convert raw observation data into image format.
+
+    This function (mostly) reformats the arrays in a raw observations dictionary
+    so that they're all indexable by row and column. It also splits the semantic_3d
+    array into 3D locations and an on-object/surface indicator array.
+
+    Some arrays in "raw_observations" are structured naturally, meaning
+    array[i, j] gives you some value for the pixel at row i and column j. This is
+    the case for "rgba" and "depth".
+
+    On the other hand, some arrays are in a flattened format, where the index i
+    corresponds to whatever pixel you get after flattening the image. This makes it
+    harder to access data given some row and column since you have to convert
+    indices back to row/column format. This is the case for "semantic_3d" which
+    contains the 3D locations associated with each pixel.
+
+    Args:
+        raw_observation: A sensor's raw observations dictionary.
+
+    Returns:
+        The grid/matrix fornatted data.
+    """
+    rgba = raw_observation["rgba"]
+    depth = raw_observation["depth"]
+    grid_shape = depth.shape[:2]
+    semantic_3d = raw_observation["semantic_3d"]
+    points = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
+    on_object = semantic_3d[:, 3].reshape(grid_shape).astype(int) > 0
+    return {
+        "rgba": rgba,
+        "depth": depth,
+        "points": points,
+        "on_object": on_object,
+    }
