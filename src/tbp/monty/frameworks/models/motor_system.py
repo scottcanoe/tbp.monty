@@ -367,6 +367,9 @@ def clean_habitat_motor_system_state(raw_state: dict) -> MotorSystemState:
 
     Returns:
         The cleaned motor system state.
+
+    TODO: This is temporary. We should decide on a standard format for motor
+    system states returned by simulators/environments and adhere to it.
     """
     state = MotorSystemState()
     for agent_id, raw_agent_state in raw_state.items():
