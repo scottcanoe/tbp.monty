@@ -151,10 +151,6 @@ class MotorSystem:
         self._last_action = None
         self._telemetry = []
 
-        # clear policies
-        self._default_policy.reset()
-        self._look_at_policy.reset()
-
     def pre_episode(self) -> None:
         """Pre episode hook."""
         self.reset()
