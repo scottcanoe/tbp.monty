@@ -283,27 +283,26 @@ class LookAtPolicy(BasePolicy):
     def set_driving_goal_state(self, goal_state: GoalState | None) -> None:
         self.driving_goal_state = goal_state
 
-    def dynamic_call(self, state: MotorSystemState) -> Action:
-        """Return the next action to take.
+    def dynamic_call(self, state: MotorSystemState) -> tuple[Action, Action]:
+        """Return turn left/right and look down/up actions to take.
+
+        Computes two actions -- a yawing action and a pitching action -- that should
+        orient the agent and sensor towards the driving goal state. They must be
+        applied in the order in which they are returned.
 
         Args:
             state: The motor system state.
 
         Returns:
-            The action to take.
+            A tuple of actions, where the first action is one of TurnLeft or TurnRight,
+            and the second action is one of LookDown or LookUp.
 
-        Note:
-        subscripts:
-          - w: world
-          - a: agent
-          - s: sensor
         """
-        # TODO: This couples this function to habitat. Probably eventually want habitat
-        # and all simulators to return states with the same format, or otherwise
-        # give things like this accessors.
+        # TODO: Remove this once we adhere to a standard format for motor system states.
         state = clean_habitat_motor_system_state(state)
 
         # Collect necessary agent and sensor pose information.
+        # Subscripts: w=world, a=agent, s=sensor.
         agent_pos_w = state[f"{self.agent_id}"]["position"]
         agent_rot_w = as_scipy_rotation(state[f"{self.agent_id}"]["rotation"])
         agent_to_world = RigidTransform(agent_pos_w, agent_rot_w)
