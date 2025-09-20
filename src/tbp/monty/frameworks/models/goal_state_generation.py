@@ -1256,10 +1256,6 @@ class SmGoalStateGenerator(GoalStateGenerator):
                     gs, raw_observation, processed_observation
                 )
 
-            # update telemetry for previous step.
-            if self.save_telemetry and len(self.telemetry) > 0:
-                self.telemetry[-1].output_goal_state = generated
-
     def _goal_state_achieved(
         self,
         goal_state: GoalState,
@@ -1274,58 +1270,16 @@ class SmGoalStateGenerator(GoalStateGenerator):
         if not self.goal_tolerances:
             return True
 
-        gridded = clean_raw_observation(raw_observation)
+        image_shape = raw_observation["depth"].shape
+        semantic_3d = raw_observation["semantic_3d"]
+        locations = semantic_3d[:, 0:3].reshape(image_shape + (3,))
 
         for name, tol in goal_state.goal_tolerances.items():
             if name == "location":
-                points = gridded["points"]
-                center_loc = center_value(points)
-                if np.linalg.norm(goal_state.location - center_loc) > tol:
+                sensed_loc = locations[locations.shape[0] // 2, locations.shape[1] // 2]
+                if np.linalg.norm(goal_state.location - sensed_loc) > tol:
                     return False
             else:
                 raise NotImplementedError(f"Goal tolerance {name} not implemented")
 
         return True
-
-
-def center_value(arr: np.ndarray) -> np.generic | np.ndarray:
-    """Convenience function for extracting the value at the center of an image."""
-    n_rows, n_cols = arr.shape[0], arr.shape[1]
-    return arr[n_rows // 2, n_cols // 2]
-
-
-def clean_raw_observation(raw_observation: dict) -> dict[str, np.ndarray]:
-    """Convert raw observation data into image format.
-
-    This function (mostly) reformats the arrays in a raw observations dictionary
-    so that they're all indexable by row and column. It also splits the semantic_3d
-    array into 3D locations and an on-object/surface indicator array.
-
-    Some arrays in "raw_observations" are structured naturally, meaning
-    array[i, j] gives you some value for the pixel at row i and column j. This is
-    the case for "rgba" and "depth".
-
-    On the other hand, some arrays are in a flattened format, where the index i
-    corresponds to whatever pixel you get after flattening the image. This makes it
-    harder to access data given some row and column since you have to convert
-    indices back to row/column format. This is the case for "semantic_3d" which
-    contains the 3D locations associated with each pixel.
-
-    Args:
-        raw_observation: A sensor's raw observations dictionary.
-
-    Returns:
-        The grid/matrix fornatted data.
-    """
-    rgba = raw_observation["rgba"]
-    depth = raw_observation["depth"]
-    grid_shape = depth.shape[:2]
-    semantic_3d = raw_observation["semantic_3d"]
-    points = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
-    on_object = semantic_3d[:, 3].reshape(grid_shape).astype(int) > 0
-    return {
-        "rgba": rgba,
-        "depth": depth,
-        "points": points,
-        "on_object": on_object,
-    }
