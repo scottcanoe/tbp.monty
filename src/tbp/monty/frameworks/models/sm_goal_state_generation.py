@@ -11,22 +11,10 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable
 
-import matplotlib.pyplot as plt
 import numpy as np
-import quaternion
-from matplotlib import colors
 from numpy.typing import ArrayLike
-from scipy import ndimage
-from scipy.spatial.transform import Rotation
-from skimage import measure
-
-from tbp.monty.frameworks.models.abstract_monty_classes import SensorModule
-from tbp.monty.frameworks.models.goal_state_generation import SmGoalStateGenerator
-from tbp.monty.frameworks.models.states import GoalState
 
 logger = logging.getLogger(__name__)
 
