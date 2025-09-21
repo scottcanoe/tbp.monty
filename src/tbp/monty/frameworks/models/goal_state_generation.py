@@ -1138,12 +1138,10 @@ class SmGoalStateGenerator(GoalStateGenerator):
 
     @property
     def enabled(self) -> bool:
-        """See if the GSG is enabled."""
         return self._enabled
 
     @enabled.setter
     def enabled(self, value: bool) -> None:
-        """Enable or disable the GSG."""
         assert isinstance(value, bool), "Enabled must be a boolean"
         self._enabled = value
         if not self._enabled:
