@@ -64,7 +64,7 @@ class MotorSystem:
             save_telemetry: Whether to save telemetry.
                 Defaults to False.
         """
-        # TODO: don't default with this... probably want to have on motor system per
+        # TODO: don't default with this... probably want to have one motor system per
         # agent, and policies inherit agent IDs from the motor system.
         self._agent_id = agent_id
 
