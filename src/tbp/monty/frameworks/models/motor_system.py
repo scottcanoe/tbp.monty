@@ -233,7 +233,17 @@ class MotorSystem:
 
 
 class LookAtPolicy(BasePolicy):
-    """A policy that looks at a target."""
+    """A policy that looks at a target.
+
+    This class assumes a system similar to a 2-DOF gimbal in which the "outer" part
+    can yaw left/right about the y-axis and the "inner" part can pitch up/down about
+    the x-axis. This setup is typical of our distant agent in which the agent
+    performs TurnLeft and TurnRight, while the sensor mounted to it performs
+    LookDown and LookUp.
+
+    The logic for orienting towards locations lies in `dynamic_call`. It returns a pair
+    of TurnLeft/Right and LookDown/Up actions to take that must be applied in order.
+    """
 
     def __init__(self, agent_id: str, sensor_module_id: str, **kwargs):
         """Initialize the look at policy.
