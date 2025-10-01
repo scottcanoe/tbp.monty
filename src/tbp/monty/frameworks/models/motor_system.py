@@ -300,6 +300,9 @@ class LookAtPolicy(BasePolicy):
         orient the agent and sensor towards the driving goal state. They must be
         applied in the order in which they are returned.
 
+        Note: the yawing actions must be performed by the agent, and the pitching
+        actions must be performed by the sensor.
+
         Args:
             state: The motor system state.
 
@@ -327,16 +330,19 @@ class LookAtPolicy(BasePolicy):
         target_rel_world = np.asarray(self.driving_goal_state.location)
         target_rel_agent = agent_to_world.inv()(target_rel_world)
 
-        # Compute the target's azimuth, relative to the agent.
+        # Compute the target's azimuth, relative to the agent. This value is used to
+        # compute the yaw action to be performed by the agent.
         agent_yaw = np.arctan2(target_rel_agent[0], -target_rel_agent[2])
 
         # Compute the target's elevation, relative to the agent. Then subtract the
-        # sensor's current pitch to get a pitch delta effective for the sensor.
-        pitch_rel_agent = np.arctan2(
+        # sensor's current pitch to get a pitch delta effective for the sensor. This
+        # value is used to compute the look up/down action which must be performed
+        # by the sensor mounted to the agent.
+        target_pitch_rel_agent = np.arctan2(
             target_rel_agent[1], np.hypot(target_rel_agent[0], target_rel_agent[2])
         )
         sensor_pitch_rel_agent = sensor_rot_rel_agent.as_euler("xyz")[0]
-        sensor_pitch = pitch_rel_agent - sensor_pitch_rel_agent
+        sensor_pitch = target_pitch_rel_agent - sensor_pitch_rel_agent
         # For some reason, the above is more stable and accurate than the below:
         # t_s = sensor_to_agent.inv()(t_a)
         # pitch_s = np.arctan2(t_s[1], np.hypot(t_s[0], t_s[2]))
