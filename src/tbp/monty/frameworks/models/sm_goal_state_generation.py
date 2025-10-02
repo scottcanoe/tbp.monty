@@ -285,3 +285,39 @@ class OnObjectGsg(SmGoalStateGenerator):
         self.decay_field.step()
 
         return goal_states
+
+
+def clean_raw_observation(raw_observation: dict) -> dict[str, np.ndarray]:
+    """Convert raw observation data into image format.
+
+    This function (mostly) reformats the arrays in a raw observations dictionary
+    so that they're all indexable by row and column. It also splits the semantic_3d
+    array into 3D locations and an on-object/surface indicator array.
+
+    Some arrays in "raw_observations" are structured naturally, meaning
+    array[i, j] gives you some value for the pixel at row i and column j. This is
+    the case for "rgba" and "depth".
+
+    On the other hand, some arrays are in a flattened format, where the index i
+    corresponds to whatever pixel you get after flattening the image. This makes it
+    harder to access data given some row and column since you have to convert
+    indices back to row/column format. This is the case for "semantic_3d" which
+    contains the 3D locations associated with each pixel.
+
+    Args:
+        raw_observation: A sensor's raw observations dictionary.
+
+    Returns:
+        The grid/matrix fornatted data.
+    """
+    rgba = raw_observation["rgba"]
+    grid_shape = rgba.shape[:2]
+    semantic_3d = raw_observation["semantic_3d"]
+    locations = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
+    on_object = semantic_3d[:, 3].reshape(grid_shape).astype(int) > 0
+    return {
+        "rgba": rgba,
+        "depth": raw_observation["depth"],
+        "locations": locations,
+        "on_object": on_object,
+    }
