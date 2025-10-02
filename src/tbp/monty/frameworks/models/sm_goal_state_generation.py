@@ -1,5 +1,4 @@
 # Copyright 2025 Thousand Brains Project
-# Copyright 2023-2024 Numenta Inc.
 #
 # Copyright may exist in Contributors' modifications
 # and/or contributions to the work.
@@ -11,186 +10,14 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable
 
-import matplotlib.pyplot as plt
 import numpy as np
-import quaternion
-from matplotlib import colors
 from numpy.typing import ArrayLike
-from scipy import ndimage
-from scipy.spatial.transform import Rotation
-from skimage import measure
-
-from tbp.monty.frameworks.models.abstract_monty_classes import SensorModule
-from tbp.monty.frameworks.models.goal_state_generation import SmGoalStateGenerator
-from tbp.monty.frameworks.models.states import GoalState
 
 logger = logging.getLogger(__name__)
 
 
-
-
-class TargetFindingGsg(SmGoalStateGenerator):
-    """Sensor module goal-state generator that finds targets in the image."""
-
-    def __init__(
-        self,
-        parent_sm: SensorModule,
-        goal_tolerances: dict | None = None,
-        save_telemetry: bool = False,
-        match: ArrayLike = "red",
-        threshold: float = 0.5,
-        min_size: int = 0,
-        **kwargs,
-    ) -> None:
-        """Initialize the GSG.
-
-        Args:
-            parent_sm: The sensor module class instance that the GSG is embedded
-                within.
-            goal_tolerances: The tolerances for each attribute of the goal-state
-                that can be used by the GSG when determining whether a goal-state is
-                achieved.
-            save_telemetry: Whether to save telemetry data.
-            **kwargs: Additional keyword arguments. Unused.
-        """
-        super().__init__(parent_sm, goal_tolerances, save_telemetry, **kwargs)
-        self.target_finder = TargetFinder(match, threshold, min_size)
-        self.decay_field = DecayField()
-
-    def _generate_output_goal_state(
-        self,
-        raw_observation: dict | None = None,
-        processed_observation: dict | None = None,
-    ) -> list[GoalState]:
-        """Generate the output goal state(s).
-
-        Generates the output goal state(s) based on the driving goal state and the
-        achieved goal state(s).
-
-        Args:
-            raw_observation: The parent sensor module's raw observations.
-            processed_observation: The parent sensor module's processed observations.
-
-        Returns:
-            The output goal state(s).
-        """
-        targets = self.target_finder(raw_observation["rgba"])
-
-        # Get coordinates of image data in (ypix, xpix, vector3d) format.
-        n_rows, n_cols = raw_observation["rgba"].shape[0:2]
-        pos_2d = raw_observation["semantic_3d"][:, 0:3].reshape(n_rows, n_cols, 3)
-
-        # Make goal states for each target.
-        goal_states = []
-        for t in targets:
-            target_loc = pos_2d[t["center_pix"][0], t["center_pix"][1]]
-            goal_states.append(self._create_goal_state(target_loc))
-
-        # Update the decay field with the current sensed location.
-        cur_loc = pos_2d[n_rows//2, n_cols//2]
-        self.decay_field.add(cur_loc)
-
-        # Modify goal-state confidence values based on the decay field.
-        for g in goal_states:
-            val = self.decay_field(g.location)
-            g.confidence = val
-
-        # Step the decay field.
-        self.decay_field.step()
-
-        # Return the goal states.
-        return goal_states
-
-    def _create_goal_state(
-        self,
-        location: np.ndarray,
-        morphological_features: Optional[Dict[str, Any]] = None,
-        non_morphological_features: Optional[Dict[str, Any]] = None,
-        confidence: float = 1.0,
-        use_state: bool = True,
-        goal_tolerances: Optional[Dict[str, Any]] = None,
-        info: Optional[Dict[str, Any]] = None,
-    ) -> GoalState:
-        """Create a goal state with default values."""
-        return GoalState(
-            location=location,
-            morphological_features=morphological_features,
-            non_morphological_features=non_morphological_features,
-            confidence=confidence,
-            use_state=use_state,
-            sender_id=self.parent_sm.sensor_module_id,
-            sender_type="GSG",
-            goal_tolerances=goal_tolerances,
-            info=info,
-        )
-
-
-class TargetFinder:
-    def __init__(
-        self, match: ArrayLike = "red", threshold: float = 0.5, min_size: int = 0
-    ):
-        self._match = np.array(colors.to_rgb(match))
-        self._threshold = threshold
-        self._min_size = min_size
-
-    def __call__(self, image: np.ndarray) -> list[dict]:
-        """Find targets.
-
-        Args:
-            image: numpy array of shape (H, W, C) with RGB values
-
-        Returns:
-            list of dicts with keys "center_pix" and "size_pix"
-        """
-        # Drop alpha if present
-        rgb = image[:, :, :3]
-        rgb = rgb / 255.0 if np.issubdtype(rgb.dtype, np.integer) else rgb
-
-        # Compute euclidean distance between each pixel's RGB values and target color
-        distances = np.sqrt(np.sum((rgb - self._match)**2, axis=2))
-
-        # Create binary mask for matching pixels
-        mask = distances < self._threshold
-
-        # Remove small noise using morphological operations
-        # Use a small disk structure to clean up the mask
-        # structure = ndimage.generate_binary_structure(2, 2)
-        # red_mask = ndimage.binary_opening(red_mask, structure=structure, iterations=1)
-        # red_mask = ndimage.binary_closing(red_mask, structure=structure, iterations=1)
-        # Label connected components
-        labeled_image, num_features = ndimage.label(mask)
-
-        # Find center of each connected component
-        targets = []
-        for i in range(1, num_features + 1):
-            # Get pixels belonging to this component
-            component_mask = labeled_image == i
-
-            # Skip if component is too small
-            if (self._min_size > 0) and (np.sum(component_mask) < self._min_size):
-                continue
-
-            # Calculate center of mass
-            center_y, center_x = ndimage.center_of_mass(component_mask)
-            row, col = round(center_y), round(center_x)
-            targets.append(
-                {
-                    "center_pix": (row, col),
-                    "size_pix": round(np.sum(component_mask)),
-                }
-            )
-
-        return targets
-
-"""
--------------------------------------------------------------------------------
- - Return Inhibition
--------------------------------------------------------------------------------
-"""
 
 class DecayKernel:
     """Decay kernel represents a previously visited location.

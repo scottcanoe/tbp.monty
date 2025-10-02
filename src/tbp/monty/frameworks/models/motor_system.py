@@ -9,25 +9,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 import numpy as np
-import quaternion
-from numpy.typing import ArrayLike
-from scipy.spatial.transform import Rotation
-from scipy.spatial.transform import Rotation as SciPyRotation
 
-from tbp.monty.frameworks.actions.action_samplers import (
-    ActionSampler,
-    ConstantSampler,
-)
-from tbp.monty.frameworks.actions.actions import Action, LookDown, TurnLeft
-from tbp.monty.frameworks.config_utils.policy_setup_utils import (
-    generate_action_list,
+from tbp.monty.frameworks.actions.action_samplers import ConstantSampler
+from tbp.monty.frameworks.actions.actions import (
+    Action,
+    LookDown,
+    LookUp,
+    TurnLeft,
+    TurnRight,
 )
 from tbp.monty.frameworks.models.motor_policies import BasePolicy, MotorPolicy
-from tbp.monty.frameworks.models.motor_system_state import MotorSystemState
+from tbp.monty.frameworks.models.motor_system_state import (
+    AgentState,
+    MotorSystemState,
+    SensorState,
+)
 from tbp.monty.frameworks.models.states import GoalState, State
+from tbp.monty.frameworks.utils.transform_utils import (
+    RigidTransform,
+    as_scipy_rotation,
+)
 
 
 @dataclass
@@ -37,6 +41,7 @@ class MotorSystemTelemetry:
     experiment_mode: Literal["train", "eval"] | None
     processed_observations: State | None
     action: Action | None
+    policy_id: str | None
 
 
 class MotorSystem:
@@ -45,6 +50,7 @@ class MotorSystem:
     def __init__(
         self,
         policy: MotorPolicy,
+        agent_id: str = "agent_id_0",
         state: MotorSystemState | None = None,
         save_telemetry: bool = False,
     ) -> None:
@@ -52,14 +58,23 @@ class MotorSystem:
 
         Args:
             policy: The default motor policy to use.
+            agent_id: The agent ID of the motor system.
             state: The initial state of the motor system.
                 Defaults to None.
             save_telemetry: Whether to save telemetry.
                 Defaults to False.
         """
+        # TODO: don't default with this... probably want to have one motor system per
+        # agent, and policies inherit agent IDs from the motor system.
+        self._agent_id = agent_id
+
         self._default_policy = self._policy = policy
-        self._look_at_policy = LookAtPolicy(rng=self._default_policy.rng)
+        self._look_at_policy = LookAtPolicy(
+            agent_id=self._agent_id,
+            sensor_module_id="view_finder",
+        )
         self.save_telemetry = save_telemetry
+
         self.reset(state)
 
     @property
@@ -70,7 +85,7 @@ class MotorSystem:
         When we move to a motor system composed of many motor modules, agent IDs
         will likely be associated with the latter.
         """
-        return self._policy.agent_id
+        return self._agent_id
 
     @property
     def last_action(self) -> Action | None:
@@ -90,7 +105,7 @@ class MotorSystem:
     @state.setter
     def state(self, state: MotorSystemState | None) -> None:
         """Sets the state of the motor system."""
-        self._state = state
+        self._state = state if state else MotorSystemState()
 
     @property
     def telemetry(self) -> list[MotorSystemTelemetry]:
@@ -129,13 +144,12 @@ class MotorSystem:
     def reset(self, state: MotorSystemState | None = None) -> None:
         """Reset the motor system."""
         self._policy = self._default_policy
-        self._state = state
+        self._state = state if state else MotorSystemState()
         self._driving_goal_state = None
         self._experiment_mode = None
         self._processed_observations = None
         self._last_action = None
         self._telemetry = []
-        self._n_steps = 0
 
     def pre_episode(self) -> None:
         """Pre episode hook."""
@@ -164,7 +178,8 @@ class MotorSystem:
 
         If there is no driving goal state, pick some other policy.
         """
-        self._policy = self._select_policy()
+        policy = self._select_policy()
+        self._policy = policy
         self._policy.set_experiment_mode(self._experiment_mode)
         if hasattr(self._policy, "set_driving_goal_state"):
             self._policy.set_driving_goal_state(self._driving_goal_state)
@@ -179,6 +194,7 @@ class MotorSystem:
         if self._driving_goal_state:
             if self._driving_goal_state.sender_id == "view_finder":
                 return self._look_at_policy
+                return self._look_at_policy
 
         return self._default_policy
 
@@ -192,14 +208,16 @@ class MotorSystem:
                     experiment_mode=self._experiment_mode,
                     processed_observations=self._processed_observations,
                     action=action,
+                    policy_id=self._policy.__class__.__name__,
                 )
             )
 
         # Need to keep this in sync with the policy's driving goal state since
         # derive_habitat_goal_state() consumes the goal state.
-        self._driving_goal_state = getattr(self._policy, "driving_goal_state", None)
-        self._last_action = self._policy.last_action
-        self._n_steps += 1
+        # For now, just clear goal states. Figuring out how and when some should
+        # persist is unclear to me.
+        self._driving_goal_state = None
+        self._last_action = action
 
     def __call__(self) -> Action:
         """Defines the structure for __call__.
@@ -209,79 +227,149 @@ class MotorSystem:
         Returns:
             The action to take.
         """
-        # TODO: ?Mark a goal state being attempted as the one being attempted so
-        # it can be checked by a GSG.?
         action = self._policy(self._state)
         self._post_call(action)
         return action
 
-"""
----------------------------------
- - LookAtPolicy implementation
-
-This isn't meant to live in this file long-term, but `motor_policies.py`
-is already > 2k lines.
-"""
 
 class LookAtPolicy(BasePolicy):
-    """A policy that looks at a target."""
+    """A policy that looks at a target.
 
-    def __init__(self, rng):
-        action_sampler_class = ConstantSampler
-        action_sampler_args = dict(
-            actions=generate_action_list("distant_agent_no_translation"),
-            rotation_degrees=5.0,
+    This class assumes a system similar to a 2-DOF gimbal in which the "outer" part
+    can yaw left/right about the y-axis and the "inner" part can pitch up/down about
+    the x-axis. This setup is typical of our distant agent in which the agent
+    performs TurnLeft and TurnRight, while the sensor mounted to it performs
+    LookDown and LookUp.
+
+    The logic for orienting towards locations lies in `dynamic_call`. It returns a pair
+    of TurnLeft/Right and LookDown/Up actions to take that must be applied in order.
+    """
+
+    def __init__(self, agent_id: str, sensor_module_id: str, **kwargs):
+        """Initialize the look at policy.
+
+        Args:
+            agent_id: The agent ID
+            sensor_module_id: The sensor module ID
+            kwargs: Additional arguments to pass to the base policy.
+        """
+        # TODO: The BasePolicy should be refactored. Not all subclasses need the
+        # arguments it requires. Here we just add some reasonable values.
+        rng = kwargs.pop("rng", np.random.default_rng(42))
+        action_sampler_class = kwargs.pop("action_sampler_class", ConstantSampler)
+        action_sampler_args = kwargs.pop(
+            "action_sampler_args",
+            dict(
+                actions=[TurnLeft, TurnRight, LookDown, LookUp],
+                rotation_degrees=5.0,
+            ),
         )
-        agent_id = "agent_id_0"
-        switch_frequency = 1.0
-
         super().__init__(
             rng=rng,
-            action_sampler_args=action_sampler_args,
             action_sampler_class=action_sampler_class,
+            action_sampler_args=action_sampler_args,
             agent_id=agent_id,
-            switch_frequency=switch_frequency,
+            switch_frequency=kwargs.pop("switch_frequency", 0.0),
+            **kwargs,
         )
+        self.sensor_module_id = sensor_module_id
+        self.driving_goal_state = None
+        self.processed_observations = None  # unused -- here for compatibility
+
+    def get_random_action(self, *args, **kwargs) -> Action:
+        """Returns TurnLeft with 0 rotation degrees.
+
+        Reimplemented due to issues with random number generation. And also, should
+        all policies be expected to return random actions?
+        """
+        return TurnLeft(agent_id=self.agent_id, rotation_degrees=0)
+
+    def reset(self) -> None:
+        """Reset the look at policy."""
+        super().reset()
         self.driving_goal_state = None
         self.processed_observations = None
 
     def set_driving_goal_state(self, goal_state: GoalState | None) -> None:
         self.driving_goal_state = goal_state
 
-    def dynamic_call(self, state: MotorSystemState) -> Action:
-        # Clean up habitat state.
-        state = clean_motor_system_state(state)
+    def dynamic_call(self, state: MotorSystemState) -> tuple[Action, Action]:
+        """Return turn left/right and look down/up actions to take.
 
-        # Find target location relative to sensor.
-        target_loc_rel_world = self.driving_goal_state.location
+        Computes two actions -- a yawing action and a pitching action -- that should
+        orient the agent and sensor towards the driving goal state. They must be
+        applied in the order in which they are returned.
 
-        # Construct transform chain that maps between world and sensor coordinates.
-        agent_rot = as_rotation_matrix(state["agent_id_0"]["rotation"])
-        agent_pos = state["agent_id_0"]["position"]
-        sensor_rot = as_rotation_matrix(
-            state["agent_id_0"]["sensors"]["view_finder"]["rotation"]
+        Note: the yawing actions must be performed by the agent, and the pitching
+        actions must be performed by the sensor.
+
+        Args:
+            state: The motor system state.
+
+        Returns:
+            A tuple of actions, where the first action is one of TurnLeft or TurnRight,
+            and the second action is one of LookDown or LookUp.
+
+        """
+        # TODO: Remove this once we adhere to a standard format for motor system states.
+        state = clean_habitat_motor_system_state(state)
+
+        # Collect necessary agent and sensor pose information.
+        # Subscripts: w=world, a=agent, s=sensor.
+        agent_dict = state[self.agent_id]
+        agent_pos_rel_world = agent_dict["position"]
+        agent_rot_rel_world = as_scipy_rotation(agent_dict["rotation"])
+        agent_to_world = RigidTransform.from_components(
+            agent_pos_rel_world, agent_rot_rel_world
         )
-        sensor_pos = state["agent_id_0"]["sensors"]["view_finder"]["position"]
-        agent_transform = RigidTransform(agent_pos, agent_rot)
-        sensor_transform = RigidTransform(sensor_pos, sensor_rot)
-        chain = TransformChain([agent_transform, sensor_transform])
 
-        # Map goal from world to sensor coordinates.
-        target_rel_sensor = chain.inv()(self.driving_goal_state.location)
+        sensor_dict = agent_dict["sensors"][self.sensor_module_id]
+        sensor_rot_rel_agent = as_scipy_rotation(sensor_dict["rotation"])
 
-        # Convert from cartesion sensor coordinates to degrees.
-        x_rot, y_rot, z_rot = target_rel_sensor
-        left_amount = -np.degrees(np.arctan2(x_rot, -z_rot))
-        distance_horiz = np.sqrt(x_rot**2 + z_rot**2)
-        down_amount = -np.degrees(np.arctan2(y_rot, distance_horiz))
+        # Get the target location in world and agent coordinates.
+        target_rel_world = np.asarray(self.driving_goal_state.location)
+        target_rel_agent = agent_to_world.inv()(target_rel_world)
 
-        return [
-            LookDown(agent_id=self.agent_id, rotation_degrees=down_amount),
-            TurnLeft(agent_id=self.agent_id, rotation_degrees=left_amount),
-        ]
+        # Compute the target's azimuth, relative to the agent. This value is used to
+        # compute the yaw action to be performed by the agent.
+        agent_yaw = np.arctan2(target_rel_agent[0], -target_rel_agent[2])
+
+        # Compute the target's elevation, relative to the agent. Then subtract the
+        # sensor's current pitch to get a pitch delta effective for the sensor. This
+        # value is used to compute the look up/down action which must be performed
+        # by the sensor mounted to the agent.
+        target_pitch_rel_agent = np.arctan2(
+            target_rel_agent[1], np.hypot(target_rel_agent[0], target_rel_agent[2])
+        )
+        sensor_pitch_rel_agent = sensor_rot_rel_agent.as_euler("xyz")[0]
+        sensor_pitch = target_pitch_rel_agent - sensor_pitch_rel_agent
+        # For some reason, the above is more stable and accurate than the below:
+        # t_s = sensor_to_agent.inv()(t_a)
+        # pitch_s = np.arctan2(t_s[1], np.hypot(t_s[0], t_s[2]))
+
+        # Create actions to return to the the motor system.
+        yaw_degrees = np.degrees(agent_yaw)
+        if yaw_degrees >= 0:
+            turn = TurnRight(agent_id=self.agent_id, rotation_degrees=yaw_degrees)
+        else:
+            turn = TurnLeft(agent_id=self.agent_id, rotation_degrees=-yaw_degrees)
+
+        pitch_degrees = np.degrees(sensor_pitch)
+        if pitch_degrees >= 0:
+            look = LookUp(agent_id=self.agent_id, rotation_degrees=pitch_degrees)
+        else:
+            look = LookDown(agent_id=self.agent_id, rotation_degrees=-pitch_degrees)
+
+        # For logging purposes only.
+        self.driving_goal_state.info["attempted"] = True
+
+        # Drop the reference to the goal state.
+        self.driving_goal_state = None
+
+        return turn, look
 
 
-def clean_motor_system_state(state: dict) -> dict:
+def clean_habitat_motor_system_state(raw_state: dict) -> MotorSystemState:
     """Clean up a Habitat motor system state dictionaries.
 
     Function that cleans up Habitat's MotorSystemState to a more usable format.
@@ -292,110 +380,35 @@ def clean_motor_system_state(state: dict) -> dict:
     converted to the more usable numpy arrays (as opposed to magnum.Vector3 objects).
 
     Args:
-        state: The motor system state to clean.
+        raw_state: The dirty habitat motor system dictionary.
 
     Returns:
         The cleaned motor system state.
+
+    TODO: This is temporary. We should decide on a standard format for motor
+    system states returned by simulators/environments and adhere to it.
     """
-    clean = {}
-    for agent_id, agent_state in state.items():
-        pos = agent_state["position"]
-        rot = agent_state["rotation"]
-        clean[agent_id] = {
-            "position": np.array([pos.x, pos.y, pos.z]),
-            "rotation": rot,
-            "sensors": {},
-        }
-        sensors_dict = agent_state["sensors"]
-        all_keys = list(sensors_dict.keys())
-        sensor_ids = {k.split(".")[0] for k in all_keys}
-        for sm_id in sensor_ids:
-            sm_key = [k for k in all_keys if k.startswith(sm_id + ".")][0]
-            pos = sensors_dict[sm_key]["position"]
-            rot = sensors_dict[sm_key]["rotation"]
-            clean[agent_id]["sensors"][sm_id] = {
+    state = MotorSystemState()
+    for agent_id, raw_agent_state in raw_state.items():
+        pos = raw_agent_state["position"]  # a magnum.Vector3
+        rot = raw_agent_state["rotation"]  # a quaternion.quaternion
+        agent_state = AgentState(
+            {
                 "position": np.array([pos.x, pos.y, pos.z]),
                 "rotation": rot,
+                "sensors": {},
             }
-    return clean
+        )
+        for sensor_key, raw_sensor_state in raw_agent_state["sensors"].items():
+            sensor_id = sensor_key.split(".")[0]
+            if sensor_id in agent_state["sensors"]:
+                continue
+            pos = raw_sensor_state["position"]
+            rot = raw_sensor_state["rotation"]
+            agent_state["sensors"][sensor_id] = SensorState(
+                position=np.array([pos.x, pos.y, pos.z]),
+                rotation=rot,
+            )
+        state[agent_id] = agent_state
 
-
-def as_rotation_matrix(
-    obj: quaternion.quaternion | ArrayLike | SciPyRotation,
-) -> np.ndarray:
-    """Convert a rotation description to a rotation matrix.
-
-    Helper function for `RigidTransform`.
-
-    Args:
-        obj: The rotation description to convert. This can be a quaternion, a
-            scipy rotation, or a rotation matrix.
-
-    Returns:
-        The rotation matrix.
-    """
-    if isinstance(obj, SciPyRotation):
-        scipy_rot = obj
-    elif isinstance(obj, quaternion.quaternion):
-        scipy_rot = SciPyRotation.from_quat(np.array([obj.x, obj.y, obj.z, obj.w]))
-    else:
-        scipy_rot = SciPyRotation.from_matrix(obj)
-    return scipy_rot.as_matrix()
-
-
-class RigidTransform:
-    """A rigid transform (rotation + translation)."""
-
-    def __init__(
-        self, pos: ArrayLike, rot: quaternion.quaternion | ArrayLike | SciPyRotation
-    ):
-        self.pos = np.array(pos)
-        self.rot = as_rotation_matrix(rot)
-
-    def inv(self) -> RigidTransform:
-        rot = self.rot.T
-        pos = rot @ (-self.pos)
-        return RigidTransform(pos, rot)
-
-    def __call__(self, point: ArrayLike) -> np.ndarray:
-        point = np.asarray(point)
-        if point.ndim == 1:
-            return self.rot @ point + self.pos
-        else:
-            return (self.rot @ point.T).T + self.pos
-
-    def __repr__(self):
-        return f"RigidTransform(pos={self.pos}, rot={self.rot})"
-
-
-class TransformChain:
-    """A chain of rigid transformations."""
-
-    def __init__(self, transforms: Sequence[RigidTransform]):
-        """Initialize the transform chain.
-
-        The order of transforms is meant to resemble parent to child ordering in
-        a graph. For example, the first transform in the chain would represent
-        an agent's position and rotation relative to the world, and the second
-        transform would represent a sensor, mounted on the agent, relative to the
-        agent's position and rotation. In this example, the chain would transform
-        data from the sensor's coordinate system to the world coordinate system.
-        Going in the opposite direction (i.e., from world to sensor) can be done
-        using the inverse of the chain.
-
-        Args:
-            transforms: The rigid transformations to chain.
-        """
-        self.transforms = list(transforms)
-
-    def __call__(self, point: ArrayLike) -> np.ndarray:
-        for transform in reversed(self.transforms):
-            point = transform(point)
-        return point
-
-    def inv(self) -> TransformChain:
-        tforms = list(reversed([t.inv() for t in self.transforms]))
-        return TransformChain(tforms)
-
-    def __repr__(self):
-        return f"TransformChain({self.transforms})"
+    return state
