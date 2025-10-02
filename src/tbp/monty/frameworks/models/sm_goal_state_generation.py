@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from tbp.monty.frameworks.models.abstract_monty_classes import SensorModule
+from tbp.monty.frameworks.models.goal_state_generation import SmGoalStateGenerator
 from tbp.monty.frameworks.models.states import GoalState
 
 logger = logging.getLogger(__name__)
@@ -249,7 +250,7 @@ class OnObjectGsg(SmGoalStateGenerator):
         """
         # Get coordinates of image data in (ypix, xpix, vector3d) format.
         obs = clean_raw_observation(raw_observation)
-        points = obs["points"]
+        locations = obs["locations"]
         on_obj = obs["on_object"]
 
         # do salience...
@@ -259,13 +260,13 @@ class OnObjectGsg(SmGoalStateGenerator):
         # Make a goal for each on-object pixel. Their default confidence value is 1.0.
         # It gets weighted downward later based on previously visited locations.
         targets_pix = np.where(on_obj)
-        targets = [points[y, x] for y, x in zip(targets_pix[0], targets_pix[1])]
+        targets = [locations[y, x] for y, x in zip(targets_pix[0], targets_pix[1])]
         goal_states = []
         for t in targets:
             goal_states.append(self._create_goal_state(t))
 
         # Update the decay field with the current sensed location.
-        cur_loc = center_value(points)
+        cur_loc = center_value(locations)
         self.decay_field.add(cur_loc)
 
         # Modify goal-state confidence values based on the decay field.
