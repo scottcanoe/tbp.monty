@@ -266,7 +266,9 @@ class OnObjectGsg(SmGoalStateGenerator):
             goal_states.append(self._create_goal_state(t))
 
         # Update the decay field with the current sensed location.
-        cur_loc = center_value(locations)
+        n_rows, n_cols = locations.shape[0], locations.shape[1]
+        cur_loc = locations[n_rows // 2, n_cols // 2]
+
         self.decay_field.add(cur_loc)
 
         # Modify goal-state confidence values based on the decay field.
