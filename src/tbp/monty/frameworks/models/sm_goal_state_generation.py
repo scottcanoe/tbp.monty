@@ -15,6 +15,9 @@ from typing import Any, Callable
 import numpy as np
 from numpy.typing import ArrayLike
 
+from tbp.monty.frameworks.models.abstract_monty_classes import SensorModule
+from tbp.monty.frameworks.models.states import GoalState
+
 logger = logging.getLogger(__name__)
 
 
@@ -200,3 +203,85 @@ class DecayField:
 
 def combine_decay_values(data: np.ndarray) -> np.ndarray:
     return np.min(data, axis=0)
+
+
+class OnObjectGsg(SmGoalStateGenerator):
+    """Sensor module goal-state generator that finds targets in the image."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        """Initialize the GSG.
+
+        Args:
+            parent_sm: The sensor module class instance that the GSG is embedded
+                within.
+            goal_tolerances: The tolerances for each attribute of the goal-state
+                that can be used by the GSG when determining whether a goal-state is
+                achieved.
+            save_telemetry: Whether to save telemetry data.
+            **kwargs: Additional keyword arguments. Unused.
+        """
+        super().__init__(parent_sm, goal_tolerances, save_telemetry, **kwargs)
+        self.decay_field = DecayField()
+        self.rng = np.random.default_rng(seed=42)
+
+    def _generate_output_goal_state(
+        self,
+        raw_observation: dict | None = None,
+        processed_observation: dict | None = None,
+    ) -> list[GoalState]:
+        """Generate the output goal state(s).
+
+        Generates the output goal state(s) based on the driving goal state and the
+        achieved goal state(s).
+
+        Args:
+            raw_observation: The parent sensor module's raw observations.
+            processed_observation: The parent sensor module's processed observations.
+
+        Returns:
+            The output goal state(s).
+        """
+        # Get coordinates of image data in (ypix, xpix, vector3d) format.
+        obs = clean_raw_observation(raw_observation)
+        points = obs["points"]
+        on_obj = obs["on_object"]
+
+        # do salience...
+        rgba = obs["rgba"]
+        depth = obs["depth"]
+
+        # Make a goal for each on-object pixel. Their default confidence value is 1.0.
+        # It gets weighted downward later based on previously visited locations.
+        targets_pix = np.where(on_obj)
+        targets = [points[y, x] for y, x in zip(targets_pix[0], targets_pix[1])]
+        goal_states = []
+        for t in targets:
+            goal_states.append(self._create_goal_state(t))
+
+        # Update the decay field with the current sensed location.
+        cur_loc = center_value(points)
+        self.decay_field.add(cur_loc)
+
+        # Modify goal-state confidence values based on the decay field.
+        # Here we are adding randomness to help keep from always picking the goal
+        # state all the way to outermost edge of the object.
+        for g in goal_states:
+            val = self.decay_field(g.location)
+            # The following rescaling by 0.8 + clipping is to keep goal states
+            # within [0, 1]. Alternatively, we could probably just normalize
+            # confidence values.
+            val = val * 0.8  # make some room for positive random values to be added
+            val = val + self.rng.normal(0, 0.1)
+            val = np.clip(val, 0, 1)
+            g.confidence *= val
+
+        # Step the decay field at the end o this function.
+        self.decay_field.step()
+
+        return goal_states
