@@ -268,7 +268,7 @@ class OnObjectGsg(SmGoalStateGenerator):
         """
         # Get coordinates of image data in (ypix, xpix, vector3d) format.
         obs = clean_raw_observation(raw_observation)
-        points = obs["points"]
+        points = obs["location"]
         on_obj = obs["on_object"]
         rgba = obs["rgba"]
         depth = obs["depth"]
@@ -314,6 +314,21 @@ class OnObjectGsg(SmGoalStateGenerator):
         return goal_states
 
 
+class UniformSalience:
+    """Uniform saliency strategy that assigns equal salience to all pixels."""
+
+    def compute_saliency_map(self, obs: dict) -> np.ndarray:
+        """Compute uniform saliency map from observation dictionary.
+
+        Args:
+            obs: The observation dictionary containing 'depth' key.
+
+        Returns:
+            A numpy array with uniform saliency values matching the depth shape.
+        """
+        return np.ones_like(obs["depth"])
+
+
 # Specialized GSG classes with different saliency strategies
 class OnObjectGsgUniform(OnObjectGsg):
     """OnObject GSG using uniform saliency."""
@@ -333,6 +348,10 @@ class OnObjectGsgUniform(OnObjectGsg):
             saliency_strategy=saliency_strategy,
             **kwargs,
         )
+
+def center_value(arr: np.ndarray) -> np.generic:
+    row_mid, col_mid = arr.shape[0] // 2, arr.shape[1] // 2
+    return arr[row_mid, col_mid]
 
 
 def clean_raw_observation(raw_observation: dict) -> dict[str, np.ndarray]:
@@ -361,11 +380,11 @@ def clean_raw_observation(raw_observation: dict) -> dict[str, np.ndarray]:
     rgba = raw_observation["rgba"]
     grid_shape = rgba.shape[:2]
     semantic_3d = raw_observation["semantic_3d"]
-    locations = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
+    location = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
     on_object = semantic_3d[:, 3].reshape(grid_shape).astype(int) > 0
     return {
         "rgba": rgba,
         "depth": raw_observation["depth"],
-        "locations": locations,
+        "location": location,
         "on_object": on_object,
     }
