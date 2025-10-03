@@ -307,9 +307,6 @@ class OnObjectGsg(SmGoalStateGenerator):
         ior_vals = self.decay_field(locs_mat)
         for g, val in zip(goal_states, ior_vals):
             g.confidence -= decay_factor * val
-        # for g in goal_states:
-        #     val = self.decay_field(g.location)
-        #     g.confidence -= decay_factor * val
 
         # Add some randomness to the goal-state confidence values.
         randomness_factor = 0.05
