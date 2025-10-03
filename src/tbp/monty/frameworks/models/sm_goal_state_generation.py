@@ -150,7 +150,7 @@ class DecayKernel:
             returned weight is a scalar. If `point` is a 2D array, the returned
             weight is a 1D array with shape (num_points,).
         """
-        return 1 - (self.w_t() * self.w_s(point))
+        return self.w_t() * self.w_s(point)
 
 
 class DecayField:
