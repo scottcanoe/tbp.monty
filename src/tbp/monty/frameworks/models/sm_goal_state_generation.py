@@ -209,6 +209,17 @@ def combine_decay_values(data: np.ndarray) -> np.ndarray:
     return np.max(data, axis=0)
 
 
+def normalize_confidence(goal_states: Iterable[GoalState]) -> None:
+    """Normalize the confidence of the goal states."""
+    confidence_values = [goal_state.confidence for goal_state in goal_states]
+    max_confidence = max(confidence_values)
+    min_confidence = min(confidence_values)
+    for goal_state in goal_states:
+        goal_state.confidence = (goal_state.confidence - min_confidence) / (
+            max_confidence - min_confidence
+        )
+
+
 class OnObjectGsg(SmGoalStateGenerator):
     """Sensor module goal-state generator that finds targets in the image."""
 
@@ -217,6 +228,7 @@ class OnObjectGsg(SmGoalStateGenerator):
         parent_sm: SensorModule,
         goal_tolerances: dict | None = None,
         save_telemetry: bool = False,
+        saliency_strategy: SaliencyStrategy | None = None,
         **kwargs,
     ) -> None:
         """Initialize the GSG.
@@ -228,11 +240,14 @@ class OnObjectGsg(SmGoalStateGenerator):
                 that can be used by the GSG when determining whether a goal-state is
                 achieved.
             save_telemetry: Whether to save telemetry data.
+            saliency_strategy: The saliency strategy to use for computing saliency maps.
+                If None, defaults to UniformSalience.
             **kwargs: Additional keyword arguments. Unused.
         """
         super().__init__(parent_sm, goal_tolerances, save_telemetry, **kwargs)
         self.decay_field = DecayField()
-        self.rng = np.random.default_rng(seed=42)
+        self.rng = np.random.RandomState(42)
+        self.saliency_strategy = saliency_strategy or UniformSalience()
 
     def _generate_output_goal_state(
         self,
@@ -253,44 +268,71 @@ class OnObjectGsg(SmGoalStateGenerator):
         """
         # Get coordinates of image data in (ypix, xpix, vector3d) format.
         obs = clean_raw_observation(raw_observation)
-        locations = obs["locations"]
+        points = obs["points"]
         on_obj = obs["on_object"]
-
-        # do salience...
         rgba = obs["rgba"]
         depth = obs["depth"]
 
-        # Make a goal for each on-object pixel. Their default confidence value is 1.0.
-        # It gets weighted downward later based on previously visited locations.
-        targets_pix = np.where(on_obj)
-        targets = [locations[y, x] for y, x in zip(targets_pix[0], targets_pix[1])]
-        goal_states = []
-        for t in targets:
-            goal_states.append(self._create_goal_state(t))
-
         # Update the decay field with the current sensed location.
-        n_rows, n_cols = locations.shape[0], locations.shape[1]
-        cur_loc = locations[n_rows // 2, n_cols // 2]
+        center_depth = depth[rgba.shape[0] // 2, rgba.shape[1] // 2]
+        if center_depth < 0.99:
+            cur_loc = center_value(points)
+            self.decay_field.add(cur_loc)
 
-        self.decay_field.add(cur_loc)
+        # Make salience map using strategy
+        salience_map = self.saliency_strategy.compute_saliency_map(obs)
 
-        # Modify goal-state confidence values based on the decay field.
-        # Here we are adding randomness to help keep from always picking the goal
-        # state all the way to outermost edge of the object.
+        # Make a goal for each on-object pixel. Initialize confidence to salience map.
+        goal_states = []
+        pix_rows, pix_cols = np.where(on_obj)
+        for row, col in zip(pix_rows, pix_cols):
+            g = self._create_goal_state(
+                location=points[row, col],
+                confidence=salience_map[row, col],
+                info={"row": row, "col": col},
+            )
+            goal_states.append(g)
+
+        # Incorporate inhibition of return by weighting confidence values
+        # downward if we have recently visited points near a goal.
+        decay_factor = 0.75
         for g in goal_states:
             val = self.decay_field(g.location)
-            # The following rescaling by 0.8 + clipping is to keep goal states
-            # within [0, 1]. Alternatively, we could probably just normalize
-            # confidence values.
-            val = val * 0.8  # make some room for positive random values to be added
-            val = val + self.rng.normal(0, 0.1)
-            val = np.clip(val, 0, 1)
-            g.confidence *= val
+            g.confidence -= decay_factor * val
 
-        # Step the decay field at the end of this function.
+        # Add some randomness to the goal-state confidence values.
+        randomness_factor = 0.05
+        for g in goal_states:
+            g.confidence += self.rng.normal(loc=0, scale=randomness_factor)
+
+        # Normalize the goal-state confidence values before returning.
+        normalize_confidence(goal_states)
+
+        # Step the decay field at the end o this function.
         self.decay_field.step()
 
         return goal_states
+
+
+# Specialized GSG classes with different saliency strategies
+class OnObjectGsgUniform(OnObjectGsg):
+    """OnObject GSG using uniform saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = UniformSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
 
 
 def clean_raw_observation(raw_observation: dict) -> dict[str, np.ndarray]:
