@@ -32,14 +32,16 @@ class DecayKernel:
     def __init__(
         self,
         location: ArrayLike,
-        tau_t: float = 5.0,
-        tau_s: float = 0.025,
+        tau_t: float = 10.0,
+        tau_s: float = 0.01,
+        cutoff_s: float | None = 0.02,
         w_t_min: float = 0.1,
         t: int = 0,
     ):
         self.location = location
         self.tau_t = tau_t
         self.tau_s = tau_s
+        self.cutoff_s = cutoff_s
         self.w_t_min = w_t_min
         self.t = t
         self._expired = False
@@ -102,20 +104,20 @@ class DecayKernel:
             returned weight is a scalar. If `point` is a 2D array, the returned
             weight is a 1D array with shape (num_points,).
         """
-        return np.exp(-self._distance(point) / self._lam_s)
-
+        dist = self._distance(point)
+        if self.cutoff_s is not None and dist > self.cutoff_s:
+            return 0
+        return np.exp(-dist / self._lam_s)
 
     def reset(self) -> None:
         """Reset the kernel to its initial state."""
         self.t = 0
         self._expired = False
 
-
     def step(self) -> None:
         """Increment the step counter, and check if the kernel is expired."""
         self.t += 1
         self._expired = self.w_t() < self.w_t_min
-
 
     def _distance(self, point: np.ndarray) -> float | np.ndarray:
         """Compute the distance between the kernel's location and one or more points.
@@ -132,7 +134,6 @@ class DecayKernel:
         """
         axis = 1 if point.ndim > 1 else None
         return np.linalg.norm(self._location - point, axis=axis)
-
 
     def __call__(self, point: np.ndarray) -> float | np.ndarray:
         """Compute the time- and distance-dependent weight at a given point.
@@ -158,23 +159,25 @@ class DecayField:
 
     Manages a collection of decay kernels. Used to weight
     `GoalState.confidence` values.
+
+    Calling order:
+      - add (usually)
+      - __call__ (usually many times)
+      - update_telemetry
+      - step
     """
 
     def __init__(
         self,
         kernel_factory: Callable[[Any, ...], DecayKernel] = DecayKernel,
         kernel_args: dict | None = None,
-        save_telemetry: bool = False,
     ):
         self.kernel_factory = kernel_factory
         self.kernel_args = dict(kernel_args) if kernel_args else {}
         self.kernels = []
-        self.save_telemetry = save_telemetry
-        self.telemetry = []
 
     def reset(self) -> None:
         self.kernels = []
-        self.telemetry = []
 
     def add(self, location: np.ndarray, **kwargs) -> None:
         """Add a kernel to the field."""
