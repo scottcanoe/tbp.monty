@@ -203,7 +203,7 @@ class DecayField:
 
 
 def combine_decay_values(data: np.ndarray) -> np.ndarray:
-    return np.min(data, axis=0)
+    return np.max(data, axis=0)
 
 
 class OnObjectGsg(SmGoalStateGenerator):
@@ -284,7 +284,7 @@ class OnObjectGsg(SmGoalStateGenerator):
             val = np.clip(val, 0, 1)
             g.confidence *= val
 
-        # Step the decay field at the end o this function.
+        # Step the decay field at the end of this function.
         self.decay_field.step()
 
         return goal_states
