@@ -104,10 +104,17 @@ class DecayKernel:
             returned weight is a scalar. If `point` is a 2D array, the returned
             weight is a 1D array with shape (num_points,).
         """
-        dist = self._distance(point)
-        if self.cutoff_s is not None and dist > self.cutoff_s:
-            return 0
-        return np.exp(-dist / self._lam_s)
+        if point.ndim == 1:
+            dist = self._distance(point)
+            if self.cutoff_s is not None and dist > self.cutoff_s:
+                return 0.0
+            return np.exp(-dist / self._lam_s)
+        else:
+            dist = self._distance(point)
+            out = np.exp(-dist / self._lam_s)
+            if self.cutoff_s is not None:
+                out[dist > self.cutoff_s] = 0.0
+            return out
 
     def reset(self) -> None:
         """Reset the kernel to its initial state."""
@@ -296,9 +303,13 @@ class OnObjectGsg(SmGoalStateGenerator):
         # Incorporate inhibition of return by weighting confidence values
         # downward if we have recently visited points near a goal.
         decay_factor = 0.75
-        for g in goal_states:
-            val = self.decay_field(g.location)
+        locs_mat = np.row_stack([g.location for g in goal_states])
+        ior_vals = self.decay_field(locs_mat)
+        for g, val in zip(goal_states, ior_vals):
             g.confidence -= decay_factor * val
+        # for g in goal_states:
+        #     val = self.decay_field(g.location)
+        #     g.confidence -= decay_factor * val
 
         # Add some randomness to the goal-state confidence values.
         randomness_factor = 0.05
