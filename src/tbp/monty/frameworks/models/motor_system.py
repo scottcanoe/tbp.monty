@@ -194,7 +194,6 @@ class MotorSystem:
         if self._driving_goal_state:
             if self._driving_goal_state.sender_id == "view_finder":
                 return self._look_at_policy
-                return self._look_at_policy
 
         return self._default_policy
 

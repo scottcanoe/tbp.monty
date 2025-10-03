@@ -15,6 +15,10 @@ from typing import Any, Callable
 import numpy as np
 from numpy.typing import ArrayLike
 
+from tbp.monty.frameworks.models.abstract_monty_classes import SensorModule
+from tbp.monty.frameworks.models.goal_state_generation import SmGoalStateGenerator
+from tbp.monty.frameworks.models.states import GoalState
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,14 +32,16 @@ class DecayKernel:
     def __init__(
         self,
         location: ArrayLike,
-        tau_t: float = 5.0,
-        tau_s: float = 0.025,
+        tau_t: float = 10.0,
+        tau_s: float = 0.01,
+        cutoff_s: float | None = 0.02,
         w_t_min: float = 0.1,
         t: int = 0,
     ):
         self.location = location
         self.tau_t = tau_t
         self.tau_s = tau_s
+        self.cutoff_s = cutoff_s
         self.w_t_min = w_t_min
         self.t = t
         self._expired = False
@@ -98,20 +104,27 @@ class DecayKernel:
             returned weight is a scalar. If `point` is a 2D array, the returned
             weight is a 1D array with shape (num_points,).
         """
-        return np.exp(-self._distance(point) / self._lam_s)
-
+        if point.ndim == 1:
+            dist = self._distance(point)
+            if self.cutoff_s is not None and dist > self.cutoff_s:
+                return 0.0
+            return np.exp(-dist / self._lam_s)
+        else:
+            dist = self._distance(point)
+            out = np.exp(-dist / self._lam_s)
+            if self.cutoff_s is not None:
+                out[dist > self.cutoff_s] = 0.0
+            return out
 
     def reset(self) -> None:
         """Reset the kernel to its initial state."""
         self.t = 0
         self._expired = False
 
-
     def step(self) -> None:
         """Increment the step counter, and check if the kernel is expired."""
         self.t += 1
         self._expired = self.w_t() < self.w_t_min
-
 
     def _distance(self, point: np.ndarray) -> float | np.ndarray:
         """Compute the distance between the kernel's location and one or more points.
@@ -129,7 +142,6 @@ class DecayKernel:
         axis = 1 if point.ndim > 1 else None
         return np.linalg.norm(self._location - point, axis=axis)
 
-
     def __call__(self, point: np.ndarray) -> float | np.ndarray:
         """Compute the time- and distance-dependent weight at a given point.
 
@@ -146,7 +158,7 @@ class DecayKernel:
             returned weight is a scalar. If `point` is a 2D array, the returned
             weight is a 1D array with shape (num_points,).
         """
-        return 1 - (self.w_t() * self.w_s(point))
+        return self.w_t() * self.w_s(point)
 
 
 class DecayField:
@@ -154,23 +166,25 @@ class DecayField:
 
     Manages a collection of decay kernels. Used to weight
     `GoalState.confidence` values.
+
+    Calling order:
+      - add (usually)
+      - __call__ (usually many times)
+      - update_telemetry
+      - step
     """
 
     def __init__(
         self,
         kernel_factory: Callable[[Any, ...], DecayKernel] = DecayKernel,
         kernel_args: dict | None = None,
-        save_telemetry: bool = False,
     ):
         self.kernel_factory = kernel_factory
         self.kernel_args = dict(kernel_args) if kernel_args else {}
         self.kernels = []
-        self.save_telemetry = save_telemetry
-        self.telemetry = []
 
     def reset(self) -> None:
         self.kernels = []
-        self.telemetry = []
 
     def add(self, location: np.ndarray, **kwargs) -> None:
         """Add a kernel to the field."""
@@ -199,4 +213,186 @@ class DecayField:
 
 
 def combine_decay_values(data: np.ndarray) -> np.ndarray:
-    return np.min(data, axis=0)
+    return np.max(data, axis=0)
+
+
+def normalize_confidence(goal_states: Iterable[GoalState]) -> None:
+    """Normalize the confidence of the goal states."""
+    confidence_values = [goal_state.confidence for goal_state in goal_states]
+    max_confidence = max(confidence_values)
+    min_confidence = min(confidence_values)
+    for goal_state in goal_states:
+        goal_state.confidence = (goal_state.confidence - min_confidence) / (
+            max_confidence - min_confidence
+        )
+
+
+class OnObjectGsg(SmGoalStateGenerator):
+    """Sensor module goal-state generator that finds targets in the image."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        saliency_strategy: SaliencyStrategy | None = None,
+        **kwargs,
+    ) -> None:
+        """Initialize the GSG.
+
+        Args:
+            parent_sm: The sensor module class instance that the GSG is embedded
+                within.
+            goal_tolerances: The tolerances for each attribute of the goal-state
+                that can be used by the GSG when determining whether a goal-state is
+                achieved.
+            save_telemetry: Whether to save telemetry data.
+            saliency_strategy: The saliency strategy to use for computing saliency maps.
+                If None, defaults to UniformSalience.
+            **kwargs: Additional keyword arguments. Unused.
+        """
+        super().__init__(parent_sm, goal_tolerances, save_telemetry, **kwargs)
+        self.decay_field = DecayField()
+        self.rng = np.random.RandomState(42)
+        self.saliency_strategy = saliency_strategy or UniformSalience()
+
+    def _generate_output_goal_state(
+        self,
+        raw_observation: dict | None = None,
+        processed_observation: dict | None = None,
+    ) -> list[GoalState]:
+        """Generate the output goal state(s).
+
+        Generates the output goal state(s) based on the driving goal state and the
+        achieved goal state(s).
+
+        Args:
+            raw_observation: The parent sensor module's raw observations.
+            processed_observation: The parent sensor module's processed observations.
+
+        Returns:
+            The output goal state(s).
+        """
+        # Get coordinates of image data in (ypix, xpix, vector3d) format.
+        obs = clean_raw_observation(raw_observation)
+        points = obs["location"]
+        on_obj = obs["on_object"]
+        rgba = obs["rgba"]
+        depth = obs["depth"]
+
+        # Update the decay field with the current sensed location.
+        center_depth = depth[rgba.shape[0] // 2, rgba.shape[1] // 2]
+        if center_depth < 0.99:
+            cur_loc = center_value(points)
+            self.decay_field.add(cur_loc)
+
+        # Make salience map using strategy
+        salience_map = self.saliency_strategy.compute_saliency_map(obs)
+
+        # Make a goal for each on-object pixel. Initialize confidence to salience map.
+        goal_states = []
+        pix_rows, pix_cols = np.where(on_obj)
+        for row, col in zip(pix_rows, pix_cols):
+            g = self._create_goal_state(
+                location=points[row, col],
+                confidence=salience_map[row, col],
+                info={"row": row, "col": col},
+            )
+            goal_states.append(g)
+
+        # Incorporate inhibition of return by weighting confidence values
+        # downward if we have recently visited points near a goal.
+        decay_factor = 0.75
+        locs_mat = np.row_stack([g.location for g in goal_states])
+        ior_vals = self.decay_field(locs_mat)
+        for g, val in zip(goal_states, ior_vals):
+            g.confidence -= decay_factor * val
+
+        # Add some randomness to the goal-state confidence values.
+        randomness_factor = 0.05
+        for g in goal_states:
+            g.confidence += self.rng.normal(loc=0, scale=randomness_factor)
+
+        # Normalize the goal-state confidence values before returning.
+        normalize_confidence(goal_states)
+
+        # Step the decay field at the end o this function.
+        self.decay_field.step()
+
+        return goal_states
+
+
+class UniformSalience:
+    """Uniform saliency strategy that assigns equal salience to all pixels."""
+
+    def compute_saliency_map(self, obs: dict) -> np.ndarray:
+        """Compute uniform saliency map from observation dictionary.
+
+        Args:
+            obs: The observation dictionary containing 'depth' key.
+
+        Returns:
+            A numpy array with uniform saliency values matching the depth shape.
+        """
+        return np.ones_like(obs["depth"])
+
+
+# Specialized GSG classes with different saliency strategies
+class OnObjectGsgUniform(OnObjectGsg):
+    """OnObject GSG using uniform saliency."""
+
+    def __init__(
+        self,
+        parent_sm: SensorModule,
+        goal_tolerances: dict | None = None,
+        save_telemetry: bool = False,
+        **kwargs,
+    ) -> None:
+        saliency_strategy = UniformSalience()
+        super().__init__(
+            parent_sm=parent_sm,
+            goal_tolerances=goal_tolerances,
+            save_telemetry=save_telemetry,
+            saliency_strategy=saliency_strategy,
+            **kwargs,
+        )
+
+def center_value(arr: np.ndarray) -> np.generic:
+    row_mid, col_mid = arr.shape[0] // 2, arr.shape[1] // 2
+    return arr[row_mid, col_mid]
+
+
+def clean_raw_observation(raw_observation: dict) -> dict[str, np.ndarray]:
+    """Convert raw observation data into image format.
+
+    This function (mostly) reformats the arrays in a raw observations dictionary
+    so that they're all indexable by row and column. It also splits the semantic_3d
+    array into 3D locations and an on-object/surface indicator array.
+
+    Some arrays in "raw_observations" are structured naturally, meaning
+    array[i, j] gives you some value for the pixel at row i and column j. This is
+    the case for "rgba" and "depth".
+
+    On the other hand, some arrays are in a flattened format, where the index i
+    corresponds to whatever pixel you get after flattening the image. This makes it
+    harder to access data given some row and column since you have to convert
+    indices back to row/column format. This is the case for "semantic_3d" which
+    contains the 3D locations associated with each pixel.
+
+    Args:
+        raw_observation: A sensor's raw observations dictionary.
+
+    Returns:
+        The grid/matrix fornatted data.
+    """
+    rgba = raw_observation["rgba"]
+    grid_shape = rgba.shape[:2]
+    semantic_3d = raw_observation["semantic_3d"]
+    location = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
+    on_object = semantic_3d[:, 3].reshape(grid_shape).astype(int) > 0
+    return {
+        "rgba": rgba,
+        "depth": raw_observation["depth"],
+        "location": location,
+        "on_object": on_object,
+    }
