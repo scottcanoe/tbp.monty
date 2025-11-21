@@ -8,6 +8,7 @@
 # https://opensource.org/licenses/MIT.
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 import numpy as np
@@ -74,15 +75,6 @@ class HabitatSalienceSM(SensorModule):
         Returns:
             A Percept, if one is generated.
         """
-        if self._save_raw_obs and not self.is_exploring:
-            self._snapshot_telemetry.raw_observation(
-                data,
-                self.state["rotation"],
-                self.state["location"]
-                if "location" in self.state.keys()
-                else self.state["position"],
-            )
-
         salience_map = self._salience_strategy(rgba=data["rgba"], depth=data["depth"])
 
         on_object = on_object_observation(data, salience_map)
@@ -104,6 +96,17 @@ class HabitatSalienceSM(SensorModule):
             )
             for i in range(len(on_object.locations))
         ]
+
+        if self._save_raw_obs and not self.is_exploring:
+            to_save = copy.copy(data)
+            to_save["goals"] = self._goals
+            self._snapshot_telemetry.raw_observation(
+                to_save,
+                self.state["rotation"],
+                self.state["location"]
+                if "location" in self.state.keys()
+                else self.state["position"],
+            )
 
         return None
 
