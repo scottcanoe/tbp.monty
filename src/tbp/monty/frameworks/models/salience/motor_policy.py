@@ -25,6 +25,7 @@ from tbp.monty.frameworks.actions.actions import (
     TurnLeft,
     TurnRight,
 )
+from tbp.monty.frameworks.agents import AgentID
 from tbp.monty.frameworks.models.motor_policies import BasePolicy
 from tbp.monty.frameworks.models.motor_system_state import (
     AgentState,
@@ -167,16 +168,17 @@ class LookAtPolicy(BasePolicy):
 
         # Create actions to return to the the motor system.
         yaw_degrees = np.degrees(agent_yaw)
+        agent_id = AgentID(self.agent_id)
         if yaw_degrees >= 0:
-            turn = TurnLeft(agent_id=self.agent_id, rotation_degrees=yaw_degrees)
+            turn = TurnLeft(agent_id=agent_id, rotation_degrees=yaw_degrees)
         else:
-            turn = TurnRight(agent_id=self.agent_id, rotation_degrees=-yaw_degrees)
+            turn = TurnRight(agent_id=agent_id, rotation_degrees=-yaw_degrees)
 
         pitch_degrees = np.degrees(sensor_pitch)
         if pitch_degrees >= 0:
-            look = LookUp(agent_id=self.agent_id, rotation_degrees=pitch_degrees)
+            look = LookUp(agent_id=agent_id, rotation_degrees=pitch_degrees)
         else:
-            look = LookDown(agent_id=self.agent_id, rotation_degrees=-pitch_degrees)
+            look = LookDown(agent_id=agent_id, rotation_degrees=-pitch_degrees)
 
         # For logging purposes only.
         self.driving_goal_state.info["attempted"] = True
@@ -233,6 +235,7 @@ def as_scipy_rotation(
         return Rotation.from_matrix(axes, obj, degrees=degrees)
 
     raise ValueError(f"Invalid rotation description: {obj}")
+
 
 def clean_habitat_motor_system_state(raw_state: dict) -> MotorSystemState:
     """Clean up a Habitat motor system state dictionaries.
