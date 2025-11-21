@@ -135,7 +135,9 @@ class MotorPolicy(abc.ABC):
         else:
             action = self.dynamic_call(state)
         self.post_action(action, state)
-        return [action] if action else []
+        if action:
+            return [action] if isinstance(action, Action) else action
+        return []
 
 
 class BasePolicy(MotorPolicy):
