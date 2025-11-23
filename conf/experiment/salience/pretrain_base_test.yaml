@@ -1,0 +1,21 @@
+defaults:
+  - /experiment/config/supervised_pretraining@config
+  - /experiment/config/logging/defaults@config.logging
+  - /experiment/config/monty/patch_and_view@config.monty_config
+  # Set up the environment and agent.
+  - /experiment/config/environment/patch_view_finder_mount_habitat@config.env_interface_config
+  - /experiment/config/environment_interface/per_object@config.train_env_interface_args
+  - /experiment/config/environment_interface/ycb/shuffled_objects@config.train_env_interface_args.object_names
+
+_target_: tbp.monty.frameworks.experiments.pretraining_experiments.MontySupervisedObjectPretrainingExperiment
+config:
+  do_eval: false
+  max_train_steps: 1
+  n_train_epochs: 1
+  logging:
+    run_name: pretrain_base_test
+    output_dir: ${path.expanduser:${oc.env:SALIENCE_ROOT, /mnt/results/scott/salience_testbed}/results/my_trained_models}
+  train_env_interface_class: ${monty.class:tbp.monty.frameworks.environments.embodied_data.EnvironmentInterfacePerObject}
+  train_env_interface_args:
+    object_init_sampler:
+      _target_: tbp.monty.frameworks.config_utils.make_env_interface_configs.PredefinedObjectInitializer
