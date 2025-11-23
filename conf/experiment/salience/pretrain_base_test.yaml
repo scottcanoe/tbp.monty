@@ -30,8 +30,8 @@ config:
   n_train_epochs: 1
   # We override the run_name in config.logging to be specific to our experiment.
   logging:
-    output_dir: ${path.expanduser:${oc.env:SALIENCE_ROOT, /mnt/results/scott/salience_testbed}}/results/pretrained
-    run_name: pretrain_base_test
+    output_dir: ${path.expanduser:${oc.env:SALIENCE_ROOT, /mnt/results/scott/salience_testbed}}/results/pretrained/pretrain_base_test
+    # run_name: pretrain_base_test
   train_env_interface_class: ${monty.class:tbp.monty.frameworks.environments.embodied_data.EnvironmentInterfacePerObject}
   # We override the train_env_interface_args to be specific to our experiment.
   train_env_interface_args:
