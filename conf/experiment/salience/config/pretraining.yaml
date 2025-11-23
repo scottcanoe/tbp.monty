@@ -1,0 +1,5 @@
+
+logging:
+  output_dir: ${path.expanduser:${oc.env:SALIENCE_ROOT, /mnt/results/scott/salience_testbed}}/results/pretrained
+
+    
