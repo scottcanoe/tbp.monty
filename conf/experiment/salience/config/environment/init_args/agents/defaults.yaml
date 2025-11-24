@@ -1,7 +1,3 @@
-# Config using view finder to find the object before starting the experiment.
-#
-# A common default for experiments that use the view finder to navigate
-# so the object is in view before the real experiment happens.
 agent_id: ${monty.agent_id:agent_id_0}
 sensor_ids:
   - patch
