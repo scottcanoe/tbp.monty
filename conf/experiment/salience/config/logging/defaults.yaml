@@ -1,0 +1,4 @@
+defaults:
+  - /experiment/config/logging/defaults@_here_
+
+wandb_group: "salience"

@@ -1,5 +1,6 @@
 defaults:
   - benchmarks: defaults
+  - project: defaults
   # Experiment name
   - experiment: MISSING
   - _self_

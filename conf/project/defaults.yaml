@@ -1,0 +1,18 @@
+name: salience
+
+paths:
+  root: ${path.expanduser:${oc.env:SALIENCE_ROOT, /mnt/results/scott/salience_testbed}}
+  results: ${project.paths.root}/results
+
+random_rotations_5_count: 5
+random_rotations_5:
+  - [0, 0, 0]
+  - [0, 90, 0]
+  - [0, 180, 0]
+  - [0, 270, 0]
+  - [90, 0, 0]
+
+rotations_1_count: 1
+rotations_1:
+  - [0, 0, 0]
+
