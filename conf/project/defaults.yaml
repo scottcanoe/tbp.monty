@@ -22,7 +22,6 @@ max_total_steps: 1000
 
 desired_object_distance: 0.1
 
-# shuffled_objects:
 
 rotations_14:
   - [0, 0, 0]
