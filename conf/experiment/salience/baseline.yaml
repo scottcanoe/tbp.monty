@@ -23,7 +23,6 @@ config:
       agents:
         agent_args:
           resolutions: ${project.sensor_resolutions}
-    transform:
   eval_env_interface_args:
     object_names:
       - mug
