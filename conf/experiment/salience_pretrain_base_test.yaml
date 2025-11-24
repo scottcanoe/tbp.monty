@@ -1,0 +1,22 @@
+defaults:
+  - salience_pretrain_base
+  
+  # select object dataset to train on (all 77)
+  
+  # - salience/env_interface_config/view_finder_128@config.env_interface_config
+
+config:
+  n_train_epochs: 1
+
+  logging:
+    run_name: salience_pretrain_base_test
+    output_dir: ${project.paths.pretrain_dir}/salience_pretrain_base_test
+    python_log_level: INFO
+    
+  train_env_interface_args:
+    object_names:
+      - ${project.objects.distinct}
+    object_init_sampler:
+      rotations: ${project.random_rotations_5}
+        # - [0, 0, 0]
+
