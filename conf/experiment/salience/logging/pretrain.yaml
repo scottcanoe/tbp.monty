@@ -5,6 +5,4 @@ monty_log_level: SILENT
 python_log_level: WARNING
 monty_handlers: []
 wandb_handlers: []
-
-# output_dir is set in the parent config file to allow run_name interpolation
-# output_dir: ${path.expanduser:${oc.env:SALIENCE_ROOT, /mnt/results/scott/salience_testbed}}/results/pretrain/${run_name}
+output_dir: ${project.paths.pretrain_dir}

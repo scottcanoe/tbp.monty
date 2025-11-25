@@ -1,0 +1,7 @@
+defaults:
+  - /experiment/salience/motor_system/informed@_here_
+
+motor_system_args:
+  policy_class: ${monty.class:tbp.monty.frameworks.models.salience.motor_policy.LookAtPolicy}
+  policy_args:
+    sensor_module_id: patch

@@ -1,0 +1,14 @@
+defaults:
+  - /experiment/salience/pretrain_base@_here_
+
+config:
+  n_train_epochs: 1
+  logging:
+    run_name: pretrain_base_debug
+  train_env_interface_args:
+    object_names:
+      - mug
+    object_init_sampler:
+      rotations:
+        - [0, 0, 0]
+
