@@ -422,6 +422,19 @@ class MontyForGraphMatching(MontyBase):
         ):
             self._pass_input_obs_to_motor_system(self.sensor_module_outputs[0])
 
+        if self.motor_system._policy.use_goal_state_driven_actions:
+            best_goal_state = None
+            best_goal_confidence = -np.inf
+            for current_goal_state in self.gsg_outputs:
+                if (
+                    current_goal_state is not None
+                    and current_goal_state.confidence > best_goal_confidence
+                ):
+                    best_goal_state = current_goal_state
+                    best_goal_confidence = current_goal_state.confidence
+
+            self.motor_system._policy.set_driving_goal_state(best_goal_state)
+
     def _set_step_type_and_check_if_done(self):
         """Check terminal conditions and decide if we change the step type."""
         self.update_step_counters()

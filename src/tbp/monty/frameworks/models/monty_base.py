@@ -280,13 +280,13 @@ class MontyBase(Monty):
         # at higher frequencies than others.
 
         # Currently only use GSG outputs at inference
-        if self.step_type == "matching_step":
-            for lm in self.learning_modules:
-                goal_states = lm.propose_goal_states()
-                self.gsg_outputs.extend(goal_states)
-            for sm in self.sensor_modules:
-                goal_states = sm.propose_goal_states()
-                self.gsg_outputs.extend(goal_states)
+        # if self.step_type == "matching_step":
+        for lm in self.learning_modules:
+            goal_states = lm.propose_goal_states()
+            self.gsg_outputs.extend(goal_states)
+        for sm in self.sensor_modules:
+            goal_states = sm.propose_goal_states()
+            self.gsg_outputs.extend(goal_states)
 
     def _pass_infos_to_motor_system(self):
         """Pass input observations and goal states to the motor system."""

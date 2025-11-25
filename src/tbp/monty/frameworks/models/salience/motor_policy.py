@@ -26,7 +26,7 @@ from tbp.monty.frameworks.actions.actions import (
     TurnRight,
 )
 from tbp.monty.frameworks.agents import AgentID
-from tbp.monty.frameworks.models.motor_policies import BasePolicy
+from tbp.monty.frameworks.models.motor_policies import InformedPolicy
 from tbp.monty.frameworks.models.motor_system_state import (
     AgentState,
     MotorSystemState,
@@ -37,7 +37,7 @@ from tbp.monty.frameworks.models.states import GoalState
 logger = logging.getLogger(__name__)
 
 
-class LookAtPolicy(BasePolicy):
+class LookAtPolicy(InformedPolicy):
     """A policy that looks at a target.
 
     This class assumes a system similar to a 2-DOF gimbal in which the "outer" part
@@ -50,7 +50,7 @@ class LookAtPolicy(BasePolicy):
     of TurnLeft/Right and LookDown/Up actions to take that must be applied in order.
     """
 
-    def __init__(self, agent_id: str, sensor_module_id: str, **kwargs):
+    def __init__(self, sensor_module_id: str, **kwargs):
         """Initialize the look at policy.
 
         Args:
@@ -60,7 +60,8 @@ class LookAtPolicy(BasePolicy):
         """
         # TODO: The BasePolicy should be refactored. Not all subclasses need the
         # arguments it requires. Here we just add some reasonable values.
-        rng = kwargs.pop("rng", np.random.default_rng(42))
+        # rng = kwargs.pop("rng", np.random.default_rng(42))
+        kwargs.pop("fixed_amount", None)
         action_sampler_class = kwargs.pop("action_sampler_class", ConstantSampler)
         action_sampler_args = kwargs.pop(
             "action_sampler_args",
@@ -69,22 +70,25 @@ class LookAtPolicy(BasePolicy):
                 rotation_degrees=5.0,
             ),
         )
-        self.desired_object_distance = kwargs.pop("desired_object_distance", 0.1)
-        self.good_view_percentage = kwargs.pop("good_view_percentage", 0.5)
-        self.use_goal_state_driven_actions = kwargs.pop(
-            "use_goal_state_driven_actions", True
+        min_perc_on_obj = kwargs.pop("min_perc_on_obj", 0.25)
+        good_view_percentage = kwargs.pop("good_view_percentage", 0.5)
+        desired_object_distance = kwargs.pop("desired_object_distance", 0.1)
+        use_goal_state_driven_actions = kwargs.pop(
+            "use_goal_state_driven_actions", False
         )
         super().__init__(
-            rng=rng,
+            min_perc_on_obj=min_perc_on_obj,
+            good_view_percentage=good_view_percentage,
+            desired_object_distance=desired_object_distance,
+            use_goal_state_driven_actions=use_goal_state_driven_actions,
             action_sampler_class=action_sampler_class,
             action_sampler_args=action_sampler_args,
-            agent_id=agent_id,
+            agent_id=kwargs.pop("agent_id", AgentID("agent_id_0")),
             switch_frequency=kwargs.pop("switch_frequency", 0.0),
             **kwargs,
         )
         self.sensor_module_id = sensor_module_id
         self.driving_goal_state = None
-        self.processed_observations = None  # unused -- here for compatibility
 
     def get_random_action(self, *args, **kwargs) -> Action:
         """Returns TurnLeft with 0 rotation degrees.
