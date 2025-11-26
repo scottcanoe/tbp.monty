@@ -1,5 +1,5 @@
 defaults:
-  - /experiment/walk_on_surf_distinct@_here_
+  - /experiment/salience/walk_on_surf_distinct@_here_
   - /experiment/salience/learning_modules/evidence_with_gsg@config.monty_config.learning_module_configs.learning_module_0
   - _self_
 

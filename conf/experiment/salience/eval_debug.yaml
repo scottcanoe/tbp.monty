@@ -1,5 +1,5 @@
 defaults:
-  - /experiment/uniform_on_surf_distinct@_here_
+  - /experiment/salience/walk_with_gsg_on_surf_distinct@_here_
   - /experiment/salience/logging/debug@config.logging
   - _self_
 
