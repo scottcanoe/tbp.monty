@@ -1,14 +1,26 @@
 defaults:
-  - /experiment/salience/pretrain_naive_spiral_scan@
-  - /experiment/salience/sensor_modules/view_finder/probe@config.monty_config.sensor_module_configs.sensor_module_1
-  # - /experiment/salience/config/clear_view_finder@config
-  # - /experiment/salience/config/clear_motor_system@config
-  # - /experiment/salience/config/clear_patch@config
+  # - /experiment/pretrain_spiral@_here_
+  # - /experiment/pretrain_random_walk@_here_
+  - /experiment/pretrain_uniform@_here_
 
 config:
   n_train_epochs: 1
+  
+  num_exploratory_steps: 50
+  max_train_steps: 50
+  max_total_steps: 101
+  
   logging:
     run_name: pretrain_debug
+
+  monty_config:
+  
+    monty_class: ${monty.class:tbp.monty.frameworks.models.graph_matching.MontyForGraphMatching}
+    monty_args:
+      min_eval_steps: 10
+      min_train_steps: 10
+      max_total_steps: 101
+      num_exploratory_steps: 50
   train_env_interface_args:
     object_names:
       - mug
@@ -17,3 +29,4 @@ config:
     object_init_sampler:
       rotations:
         - [0, 0, 0]
+

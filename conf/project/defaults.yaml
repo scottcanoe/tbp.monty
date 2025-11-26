@@ -16,57 +16,14 @@ paths:
   pretrain_dir: ${project.paths.results_dir}/pretrain
   debug_dir: ${project.paths.results_dir}/debug
 
-min_eval_steps: 10
-max_eval_steps: 500
-min_train_steps: 1
-max_train_steps: 1000
-max_total_steps: 1000
-num_exploratory_steps: 500
-
 patch:
   resolution: [64, 64]
   zoom: 10.0
-  save_raw_obs: false
-  pretrain_features:
-    - pose_vectors
-    - pose_fully_defined
-    - on_object
-    - object_coverage
-    - hsv
-    - principal_curvatures_log
-    - rgba
-  eval_features:
-    - pose_vectors
-    - pose_fully_defined
-    - on_object
-    - object_coverage
-    - hsv
-    - principal_curvatures_log
-  noise_params:
-    features:
-      - pose_vectors: 2
-      - pose_fully_defined: 0.01
-      - hsv: 0.1
-      - principal_curvatures_log: 0.1
-    location: 0.002
-  delta_thresholds:
-    on_object: 0
-    distance: 0.01
-  
+
 view_finder:
   resolution: [128, 128]
   zoom: 1.0
-  save_raw_obs: false
-
-policy:
-  desired_object_distance: 0.1
-  good_view_percentage: 0.5
-  naive_spiral_scan_step_size: 3
-
-pretrain:
-  distance_threshold: 0.001
   
-
 objects:
   debug:
     - mug

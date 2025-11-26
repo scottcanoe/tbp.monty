@@ -429,6 +429,7 @@ class InformedEnvironmentInterface(EnvironmentInterfacePerObject):
             isinstance(self.motor_system._policy, InformedPolicy)
             and self.motor_system._policy.use_goal_state_driven_actions
             and self.motor_system._policy.driving_goal_state is not None
+            and self.motor_system._policy.driving_goal_state.morphological_features
         ):
             return self.execute_jump_attempt()
 

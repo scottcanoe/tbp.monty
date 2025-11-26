@@ -5,3 +5,4 @@ motor_system_args:
   policy_class: ${monty.class:tbp.monty.frameworks.models.salience.motor_policy.LookAtPolicy}
   policy_args:
     sensor_module_id: patch
+    use_goal_state_driven_actions: true

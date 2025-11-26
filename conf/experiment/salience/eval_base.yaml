@@ -1,0 +1,43 @@
+# subs must add
+
+
+defaults:
+  - /experiment/config/eval@config
+  - /experiment/salience/logging/eval@config.logging
+  - /experiment/salience/sensor_modules/patch/eval@config.monty_config.sensor_module_configs.sensor_module_0
+  - /experiment/salience/sensor_modules/view_finder/probe@config.monty_config.sensor_module_configs.sensor_module_1
+  - /experiment/salience/learning_modules/evidence@config.monty_config.learning_module_configs.learning_module_0
+  - /experiment/salience/motor_system/informed@config.monty_config.motor_system_config
+  - /experiment/salience/env_interface/defaults@config.env_interface_config
+
+
+_target_: tbp.monty.frameworks.experiments.object_recognition_experiments.MontyObjectRecognitionExperiment
+config:
+
+  n_eval_epochs: 5
+  max_eval_steps: 500
+  max_total_steps: 1000
+
+  monty_config:
+    
+    monty_class: ${monty.class:tbp.monty.frameworks.models.evidence_matching.model.MontyForEvidenceGraphMatching}
+    monty_args:
+      min_eval_steps: 20
+      min_train_steps: 20
+      max_total_steps: 1000
+      num_exploratory_steps: 500
+    sm_to_agent_dict:
+      patch: ${monty.agent_id:agent_id_0}
+      view_finder: ${monty.agent_id:agent_id_0}
+    sm_to_lm_matrix:
+      - - 0
+    lm_to_lm_matrix: null
+    lm_to_lm_vote_matrix: null
+  
+  eval_env_interface_class: ${monty.class:tbp.monty.frameworks.environments.embodied_data.InformedEnvironmentInterface}
+  eval_env_interface_args:
+    parent_to_child_mapping: null
+    object_names: ${project.objects.all}
+    object_init_sampler:
+      _target_: tbp.monty.frameworks.config_utils.make_env_interface_configs.PredefinedObjectInitializer
+      rotations: ${project.rotations.random_5}

@@ -1,9 +1,0 @@
-defaults:
-  - /experiment/salience/pretrain_base@
-  - /experiment/salience/motor_system/naive_spiral_scan@config.monty_config.motor_system_config
-
-_target_: tbp.monty.frameworks.experiments.pretraining_experiments.MontySupervisedObjectPretrainingExperiment
-config:
-
-  logging:
-    run_name: pretrain_naive_spiral_scan

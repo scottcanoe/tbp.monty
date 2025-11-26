@@ -1,0 +1,14 @@
+defaults:
+  - /experiment/salience/eval_base@_here_
+  - /experiment/salience/sensor_modules/view_finder/uniform@config.monty_config.sensor_module_configs.sensor_module_1
+  - /experiment/salience/motor_system/lookat@config.monty_config.motor_system_config
+  - _self_
+
+config:
+  
+  model_name_or_path: ${benchmarks.pretrained_dir}/surf_agent_1lm_10distinctobj/pretrained/
+  logging:
+    run_name: uniform_on_surf_distinct
+  
+  eval_env_interface_args:
+    object_names: ${project.objects.distinct}

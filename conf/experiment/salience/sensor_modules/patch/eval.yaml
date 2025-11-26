@@ -19,3 +19,4 @@ sensor_module_args:
   delta_thresholds:
     on_object: 0
     distance: 0.01
+  
