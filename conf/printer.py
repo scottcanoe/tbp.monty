@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hydra
+import numpy as np
 from omegaconf import DictConfig, OmegaConf
 
 from tbp.monty.frameworks.run_env import setup_env
@@ -31,6 +32,16 @@ def ndarray_resolver(list_or_tuple: list | tuple) -> str:
     """Returns a string representation of the array instead of actual numpy array."""
     return f"np.array({list(list_or_tuple)})"
 
+def numpy_list_eval_resolver(expr_list: list) -> list[float]:
+    # call str() on each item so we can use number literals
+    return str([eval(str(item)) for item in expr_list])  # noqa: S307
+
+
+def numpy_pi_resolver(obj: str) -> float:
+    if "np.pi" in obj:
+        return str(np.pi)
+    return obj
+    # return float(obj)
 
 def ones_resolver(n: int) -> str:
     """Returns a string representation instead of actual numpy array."""
@@ -43,8 +54,17 @@ if __name__ == "__main__":
     # Override resolvers that return non-serializable objects
     OmegaConf.clear_resolver("monty.class")
     OmegaConf.register_new_resolver("monty.class", monty_class_resolver)
+
     OmegaConf.clear_resolver("np.array")
     OmegaConf.register_new_resolver("np.array", ndarray_resolver)
+
     OmegaConf.clear_resolver("np.ones")
     OmegaConf.register_new_resolver("np.ones", ones_resolver)
+
+    OmegaConf.clear_resolver("np.list_eval")
+    OmegaConf.register_new_resolver("np.list_eval", numpy_list_eval_resolver)
+
+    OmegaConf.clear_resolver("np.pi")
+    OmegaConf.register_new_resolver("np.pi", numpy_pi_resolver)
+
     printer()
