@@ -1,0 +1,19 @@
+defaults:
+  - /experiment/salience/pretrain_naive_spiral_scan@
+  - /experiment/salience/sensor_modules/view_finder/probe@config.monty_config.sensor_module_configs.sensor_module_1
+  # - /experiment/salience/config/clear_view_finder@config
+  # - /experiment/salience/config/clear_motor_system@config
+  # - /experiment/salience/config/clear_patch@config
+
+config:
+  n_train_epochs: 1
+  logging:
+    run_name: pretrain_debug
+  train_env_interface_args:
+    object_names:
+      - mug
+      - bowl
+      - golf_ball
+    object_init_sampler:
+      rotations:
+        - [0, 0, 0]

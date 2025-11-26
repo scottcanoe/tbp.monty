@@ -1,0 +1,4 @@
+# Apply to: config
+monty_config:
+  sensor_module_configs:
+    sensor_module_1: null

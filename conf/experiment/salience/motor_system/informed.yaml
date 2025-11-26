@@ -2,8 +2,8 @@ motor_system_class: ${monty.class:tbp.monty.frameworks.models.motor_system.Motor
 motor_system_args:
   policy_class: ${monty.class:tbp.monty.frameworks.models.motor_policies.InformedPolicy}
   policy_args:
-    good_view_percentage: 0.5
-    desired_object_distance: 0.1
+    desired_object_distance: ${project.policy.desired_object_distance}
+    good_view_percentage: ${project.policy.good_view_percentage}
     use_goal_state_driven_actions: true
     switch_frequency: 1.0
     min_perc_on_obj: 0.25

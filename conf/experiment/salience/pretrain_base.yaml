@@ -1,23 +1,40 @@
+# Must add a motor system.
+
 defaults:
   - /experiment/config/supervised_pretraining@config
   - /experiment/salience/logging/pretrain@config.logging
-  - /experiment/salience/env_interface_config/view_finder_128@config.env_interface_config
-  - /experiment/salience/motor_system/spiral_3@config.monty_config.motor_system_config
-    
+  - /experiment/salience/env_interface/defaults@config.env_interface_config
+
 _target_: tbp.monty.frameworks.experiments.pretraining_experiments.MontySupervisedObjectPretrainingExperiment
 config:
+
   n_train_epochs: 14
+  max_train_steps: ${project.max_train_steps}
+  max_total_steps: ${project.max_total_steps}
+
   logging:
     run_name: pretrain_base
-    python_log_level: INFO
 
   monty_config:
     monty_class: ${monty.class:tbp.monty.frameworks.models.graph_matching.MontyForGraphMatching}
     monty_args:
-      num_exploratory_steps: 1000
-      min_eval_steps: 10
-      min_train_steps: 1
-      max_total_steps: 2500
+      num_exploratory_steps: ${project.num_exploratory_steps}
+      min_eval_steps: ${project.min_eval_steps}
+      min_train_steps: ${project.min_train_steps}
+      max_total_steps: ${project.max_total_steps}
+
+    sensor_module_configs:
+      sensor_module_0:
+        sensor_module_class: ${monty.class:tbp.monty.frameworks.models.sensor_modules.HabitatSM}
+        sensor_module_args:
+          sensor_module_id: patch
+          features: ${project.patch.pretrain_features}
+          save_raw_obs: ${project.patch.save_raw_obs}
+      # sensor_module_1:
+      #   sensor_module_class: ${monty.class:tbp.monty.frameworks.models.sensor_modules.Probe}
+      #   sensor_module_args:
+      #     sensor_module_id: view_finder
+      #     save_raw_obs: ${project.view_finder.save_raw_obs}
       
     learning_module_configs:
       learning_module_0:
@@ -28,29 +45,10 @@ config:
           tolerance: ${np.array:[0.0001, 0.0001, 0.0001]}
           graph_delta_thresholds:
             patch:
-              distance: 0.001
+              distance: ${project.pretrain.distance_threshold}
               pose_vectors: ${np.list_eval:[np.pi / 8, np.pi * 2, np.pi * 2]}
               principal_curvatures_log: [1, 1]
               hsv: [0.1, 1, 1]
-
-    sensor_module_configs:
-      sensor_module_0:
-        sensor_module_class: ${monty.class:tbp.monty.frameworks.models.sensor_modules.HabitatSM}
-        sensor_module_args:
-          sensor_module_id: patch
-          features:
-            - pose_vectors
-            - pose_fully_defined
-            - on_object
-            - object_coverage
-            - hsv
-            - principal_curvatures_log
-          save_raw_obs: false
-      sensor_module_1:
-        sensor_module_class: ${monty.class:tbp.monty.frameworks.models.sensor_modules.Probe}
-        sensor_module_args:
-          sensor_module_id: view_finder
-          save_raw_obs: false
 
     sm_to_agent_dict:
       patch: ${monty.agent_id:agent_id_0}

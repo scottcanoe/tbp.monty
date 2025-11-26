@@ -1,0 +1,8 @@
+# Apply to: config
+n_train_epochs: 14
+train_env_interface_class: ${monty.class:tbp.monty.frameworks.environments.embodied_data.EnvironmentInterfacePerObject}
+train_env_interface_args:
+  object_names: ${project.objects.all}
+  object_init_sampler:
+    _target_: tbp.monty.frameworks.config_utils.make_env_interface_configs.PredefinedObjectInitializer
+    rotations: ${project.rotations.train_14}

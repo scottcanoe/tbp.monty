@@ -1,0 +1,13 @@
+sensor_module_class: ${monty.class:tbp.monty.frameworks.models.sensor_modules.HabitatSM}
+sensor_module_args:
+  sensor_module_id: patch
+  save_raw_obs: false
+  features:
+    - pose_vectors
+    - pose_fully_defined
+    - on_object
+    - object_coverage
+    - hsv
+    - principal_curvatures_log
+    - rgba
+  

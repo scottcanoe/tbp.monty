@@ -1,0 +1,14 @@
+defaults:
+  - /experiment/salience/logging/defaults@_here_
+
+output_dir: ${project.paths.debug_dir}
+
+python_log_level: INFO
+
+monty_log_level: DETAILED
+monty_handlers:
+  - ${monty.class:tbp.monty.frameworks.loggers.monty_handlers.BasicCSVStatsHandler}
+  - ${monty.class:tbp.monty.frameworks.loggers.monty_handlers.DetailedJSONHandler}
+  - ${monty.class:tbp.monty.frameworks.loggers.monty_handlers.ReproduceEpisodeHandler}
+
+wandb_handlers: []

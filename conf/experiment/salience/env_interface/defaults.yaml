@@ -1,3 +1,4 @@
+# Apply to: config.env_interface_config
 env_init_args:
   objects:
   - name: coneSolid
@@ -20,10 +21,8 @@ env_init_args:
       - 1.5
       - 0.2
       resolutions:
-      - - 64
-        - 64
-      - - 64
-        - 64
+        - ${project.patch.resolution}
+        - ${project.view_finder.resolution}
       positions:
       - - 0.0
         - 0.0
@@ -44,8 +43,8 @@ env_init_args:
       - false
       - false
       zooms:
-      - 10.0
-      - 1.0
+      - ${project.patch.zoom}
+      - ${project.view_finder.zoom}
     agent_type: ${monty.class:tbp.monty.simulators.habitat.MultiSensorAgent}
 env_init_func: ${monty.class:tbp.monty.simulators.habitat.environment.HabitatEnvironment}
 transform:
@@ -58,14 +57,12 @@ transform:
   - patch
   - view_finder
   resolutions:
-  - - 64
-    - 64
-  - - 64
-    - 64
+    - ${project.patch.resolution}
+    - ${project.view_finder.resolution}
   world_coord: true
   zooms:
-  - 10.0
-  - 1.0
+  - ${project.patch.zoom}
+  - ${project.view_finder.zoom}
   get_all_points: true
   use_semantic_sensor: false
 rng: null

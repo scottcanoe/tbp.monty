@@ -1,8 +1,4 @@
 defaults:
-  - defaults
+  - /experiment/salience/logging/defaults@_here_
 
-monty_log_level: SILENT
-python_log_level: WARNING
-monty_handlers: []
-wandb_handlers: []
 output_dir: ${project.paths.pretrain_dir}

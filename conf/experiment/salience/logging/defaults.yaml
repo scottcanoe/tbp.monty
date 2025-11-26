@@ -1,4 +1,20 @@
-defaults:
-  - /experiment/config/logging/defaults@_here_
+output_dir: ${project.paths.debug_dir}
 
-wandb_group: "salience"
+python_log_level: WARNING
+python_log_to_file: true
+python_log_to_stderr: true
+
+monty_log_level: SILENT
+monty_handlers: []
+
+wandb_group: ${project.wandb_group}
+wandb_handlers: []
+resume_wandb_run: false
+log_parallel_wandb: false
+wandb_id:
+  _target_: wandb.util.generate_id
+
+
+
+
+

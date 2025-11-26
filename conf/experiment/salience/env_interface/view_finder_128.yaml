@@ -1,14 +1,12 @@
 defaults:
-  - defaults
+  - /experiment/salience/env_interface/defaults@_here_
 
 env_init_args:
   agents:
     agent_args:
       resolutions:
-      - - 64
-        - 64
-      - - 64
-        - 64
+        - ${project.patch.resolution}
+        - [128, 128]
 
 transform:
 - _target_: tbp.monty.frameworks.environment_utils.transforms.MissingToMaxDepth
@@ -17,16 +15,15 @@ transform:
 - _target_: tbp.monty.frameworks.environment_utils.transforms.DepthTo3DLocations
   agent_id: ${monty.agent_id:agent_id_0}
   sensor_ids:
-  - patch
-  - view_finder
+    - patch
+    - view_finder
   resolutions:
-  - - 64
-    - 64
-  - - 64
-    - 64
+    - ${project.patch.resolution}
+    - [128, 128]
+
   world_coord: true
   zooms:
-  - 10.0
-  - 1.0
+    - ${project.patch.zoom}
+    - ${project.view_finder.zoom}
   get_all_points: true
   use_semantic_sensor: false
