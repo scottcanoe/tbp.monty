@@ -10,6 +10,14 @@ config:
   logging:
     run_name: eval_debug
 
+    detailed_filters:
+      - _target_: tbp.monty.frameworks.loggers.monty_handlers.IncludeExcludeFilter
+        exclude:
+          - "LM*"
+      - _target_: tbp.monty.frameworks.loggers.monty_handlers.RawObservationsFilter
+        include:
+          - "goals"
+
   monty_config:
     sensor_module_configs:
       sensor_module_1:

@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import abc
 import copy
+import fnmatch
 import json
 import logging
 import os
 from pathlib import Path
 from pprint import pformat
-from typing import Container, Literal
+from typing import Any, Container, Iterable, Literal
 
 from typing_extensions import override
 
@@ -66,6 +67,7 @@ class DetailedJSONHandler(MontyHandler):
         detailed_episodes_to_save: Container[int] | Literal["all"] = "all",
         detailed_save_per_episode: bool = False,
         episode_id_parallel: int | None = None,
+        detailed_filters: list | None = None,
     ) -> None:
         """Initialize the DetailedJSONHandler.
 
@@ -82,6 +84,10 @@ class DetailedJSONHandler(MontyHandler):
         self.detailed_episodes_to_save = detailed_episodes_to_save
         self.detailed_save_per_episode = detailed_save_per_episode
         self.episode_id_parallel = episode_id_parallel
+
+        self.filters = []
+        if detailed_filters:
+            self.filters.extend(detailed_filters)
 
     @classmethod
     def log_level(cls):
@@ -153,6 +159,10 @@ class DetailedJSONHandler(MontyHandler):
 
         stats = self.get_detailed_stats(data, global_episode_id, local_episode, mode)
 
+        for episode_key in stats.keys():
+            for filt in self.filters:
+                stats[episode_key] = filt(stats[episode_key])
+
         if self.detailed_save_per_episode:
             self._save_per_episode(output_dir, global_episode_id, stats)
         else:
@@ -208,6 +218,87 @@ class DetailedJSONHandler(MontyHandler):
 
     def close(self):
         pass
+
+class TestFilter:
+    def __init__(self, value: str = "test_value"):
+        self.value = value
+
+    # def __call__(self, dct: dict[str, Any]) -> dict[str, Any]:
+    #     return {k: v for k, v in dct.items() if v == self.test_value}
+
+
+class IncludeExcludeFilter:
+    """Simple include/exclude filter for strings. Supports glob patterns.
+
+    Designed to operate like the include/exclude arguments for programs like rsync.
+    The rules are:
+      - If 'include' is given, ONLY items that match include patterns won't be
+        filtered out. If `include` is empty or None, then all items will be included.
+      - If 'exclude' is given, items that match exclude patterns will be filtered out.
+        If `exclude` is empty or None, then no items will be excluded.
+      - `include` is evaluated first, then `exclude`.
+    """
+
+    def __init__(
+        self,
+        include: str | Iterable[str] = (),
+        exclude: str | Iterable[str] = (),
+    ):
+        """Initialize the filter.
+
+        Args:
+            include: Strings/patterns to include.
+            exclude: Strings/patterns to exclude.
+        """
+        include = [include] if isinstance(include, str) else include
+        exclude = [exclude] if isinstance(exclude, str) else exclude
+        self._include = set(include)
+        self._exclude = set(exclude)
+
+    def match(self, text: str) -> bool:
+        """Check if text should be included.
+
+        Returns True if included, False if excluded.
+        First matching rule wins.
+        """
+        if self._include:
+            return any(fnmatch.fnmatch(text, pattern) for pattern in self._include)
+        if self._exclude:
+            return not any(fnmatch.fnmatch(text, pattern) for pattern in self._exclude)
+        return True
+
+    def __call__(self, dct: dict[str, Any]) -> dict[str, Any]:
+        """Filter a dict."""
+        return {k: v for k, v in dct.items() if self.match(k)}
+
+
+class RawObservationsFilter:
+    """Filter for including/excluding sensor module raw observation data.
+
+    This filter applies an include/exclude filter to each sensor module's
+    raw observations dictionaries. For example, raw observations typically have the
+    keys "rgba", "depth", and "semantic_3d", "world_coords", etc. but we may only
+    want to save the "rgba" data. This filter with `include=["rgba"]` will only save
+    the "rgba" data.
+
+    """
+
+    def __init__(
+        self,
+        include: str | Iterable[str] = (),
+        exclude: str | Iterable[str] = (),
+    ):
+        self._filter = IncludeExcludeFilter(include, exclude)
+
+    def __call__(self, buffer_data: dict[str, Any]) -> dict[str, Any]:
+        """Filter a dict."""
+        sm_ids = [k for k in buffer_data.keys() if k.startswith("SM_")]
+        for sm_id in sm_ids:
+            sm_dict = buffer_data[sm_id]
+            raw_observations = sm_dict["raw_observations"]
+            for i, row in enumerate(raw_observations):
+                raw_observations[i] = self._filter(row)
+        return buffer_data
 
 
 class BasicCSVStatsHandler(MontyHandler):
