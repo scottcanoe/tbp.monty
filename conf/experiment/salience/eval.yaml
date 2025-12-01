@@ -1,29 +1,39 @@
 # subs must add
-
+# - view_finder
+# - motor system
 
 defaults:
   - /experiment/config/eval@config
   - /experiment/salience/logging/eval@config.logging
   - /experiment/salience/sensor_modules/patch/eval@config.monty_config.sensor_module_configs.sensor_module_0
-  - /experiment/salience/sensor_modules/view_finder/probe@config.monty_config.sensor_module_configs.sensor_module_1
   - /experiment/salience/learning_modules/evidence@config.monty_config.learning_module_configs.learning_module_0
-  - /experiment/salience/motor_system/informed@config.monty_config.motor_system_config
   - /experiment/salience/env_interface/defaults@config.env_interface_config
 
 
 _target_: tbp.monty.frameworks.experiments.object_recognition_experiments.MontyObjectRecognitionExperiment
 config:
+  
+  do_train: false
+  n_train_epochs: 0
+  max_train_steps: 0
+  supervised_lm_ids: []
 
+  do_eval: true
   n_eval_epochs: 5
   max_eval_steps: 500
+  min_lms_match: 1
+  model_name_or_path: ""
+
   max_total_steps: 1000
+  show_sensor_output: false
+  seed: 42
 
   monty_config:
     
     monty_class: ${monty.class:tbp.monty.frameworks.models.evidence_matching.model.MontyForEvidenceGraphMatching}
     monty_args:
-      min_eval_steps: 20
-      min_train_steps: 20
+      min_eval_steps: 10
+      min_train_steps: 10
       max_total_steps: 1000
       num_exploratory_steps: 500
     sm_to_agent_dict:

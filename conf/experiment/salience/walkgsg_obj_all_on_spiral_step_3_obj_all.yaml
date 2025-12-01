@@ -1,8 +1,9 @@
 defaults:
-  - /experiment/salience/walk_on_surf_distinct@_here_
+  - /experiment/salience/walk_obj_all_on_spiral_step_3_obj_all@_here_
   - /experiment/salience/learning_modules/evidence_with_gsg@config.monty_config.learning_module_configs.learning_module_0
   - _self_
 
 config:
   logging:
-    run_name: walk_with_gsg_on_surf_distinct
+    run_name: walkgsg_obj_all_on_spiral_step_3_obj_all
+  

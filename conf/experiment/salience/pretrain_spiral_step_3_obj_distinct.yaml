@@ -1,0 +1,20 @@
+defaults:
+  - /experiment/salience/pretrain@_here_
+  - /experiment/salience/sensor_modules/view_finder/probe@config.monty_config.sensor_module_configs.sensor_module_1
+  - /experiment/salience/motor_system/naive_spiral_scan@config.monty_config.motor_system_config
+  - _self_
+
+config:
+  logging:
+    run_name: pretrain_spiral_step_3_obj_distinct
+      
+  monty_config:
+    motor_system_config:
+      motor_system_args:
+        policy_args:
+          fixed_amount: 3
+
+  train_env_interface_args:
+    object_names: ${project.objects.distinct}
+    # object_names:
+      # - mug

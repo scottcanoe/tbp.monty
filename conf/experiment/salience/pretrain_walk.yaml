@@ -1,5 +1,5 @@
 defaults:
-  - /experiment/salience/pretrain_base@_here_
+  - /experiment/salience/pretrain@_here_
   - /experiment/salience/sensor_modules/view_finder/probe@config.monty_config.sensor_module_configs.sensor_module_1
   - /experiment/salience/motor_system/informed@config.monty_config.motor_system_config
 

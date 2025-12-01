@@ -1,5 +1,5 @@
 defaults:
-  - /experiment/salience/walk_with_gsg_on_surf_distinct@_here_
+  - /experiment/salience/uniform_on_surf_distinct@_here_
   - /experiment/salience/logging/debug@config.logging
   - _self_
 
@@ -13,13 +13,17 @@ config:
     detailed_filters:
       - _target_: tbp.monty.frameworks.loggers.monty_handlers.IncludeExcludeFilter
         exclude:
-          - "LM*"
-      - _target_: tbp.monty.frameworks.loggers.monty_handlers.RawObservationsFilter
-        include:
-          - "goals"
+          - "LM_0"
+          
+      # - _target_: tbp.monty.frameworks.loggers.monty_handlers.RawObservationsFilter
+        # include:
+          # - "goals"
 
   monty_config:
     sensor_module_configs:
+      sensor_module_0:
+        sensor_module_args:
+          save_raw_obs: true
       sensor_module_1:
         sensor_module_args:
           save_raw_obs: true
@@ -27,8 +31,7 @@ config:
   eval_env_interface_args:
     object_names: #${project.objects.distinct}
       - mug
-      # - bowl
-      # - golf_ball
+      
     object_init_sampler:
       rotations:
         - [0, 0, 0]

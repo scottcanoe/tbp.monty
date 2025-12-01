@@ -1,5 +1,6 @@
 defaults:
   - /experiment/salience/learning_modules/evidence@_here_
+  - _self_
 
 learning_module_args:
   gsg_class: ${monty.class:tbp.monty.frameworks.models.goal_state_generation.EvidenceGoalStateGenerator}
