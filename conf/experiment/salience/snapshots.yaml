@@ -1,0 +1,36 @@
+defaults:
+  - /experiment/salience/walk_obj_distinct_on_spiral_step_3_obj_distinct@_here_
+  - /experiment/salience/logging/eval_debug@config.logging
+  - _self_
+
+config:
+  
+  max_total_steps: 1
+  max_eval_steps: 1
+  n_eval_epochs: 1
+  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral_step_3_obj_distinct/pretrained/
+  logging:
+    run_name: snapshots
+    detailed_save_per_episode: true
+    detailed_filters:
+      - _target_: tbp.monty.frameworks.loggers.monty_handlers.IncludeExcludeFilter
+        exclude:
+          - "LM_0"
+  
+  monty_config:
+    sensor_module_configs:
+      sensor_module_0:
+        sensor_module_args:
+          save_raw_obs: false
+      sensor_module_1:
+        sensor_module_args:
+          save_raw_obs: true
+  
+  eval_env_interface_args:
+    object_names: ${project.objects.distinct}
+    # object_names:
+    #   - mug
+    #   - bowl
+    object_init_sampler:
+      rotations:
+        - [0, 0, 0]
