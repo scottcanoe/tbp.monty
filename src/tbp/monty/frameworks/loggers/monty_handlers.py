@@ -161,7 +161,7 @@ class DetailedJSONHandler(MontyHandler):
 
         for episode_key in stats.keys():
             for filt in self.filters:
-                stats[episode_key] = filt(stats[episode_key])
+                stats[episode_key] = filt.apply(stats[episode_key])
 
         if self.detailed_save_per_episode:
             self._save_per_episode(output_dir, global_episode_id, stats)
@@ -260,6 +260,11 @@ class IncludeExcludeFilter:
 
         Returns True if included, False if excluded.
         First matching rule wins.
+
+        If both include and exclude are provided, the include takes precedence.
+
+        Returns:
+            True if text should be included, False if excluded.
         """
         if self._include:
             return any(fnmatch.fnmatch(text, pattern) for pattern in self._include)
@@ -267,10 +272,8 @@ class IncludeExcludeFilter:
             return not any(fnmatch.fnmatch(text, pattern) for pattern in self._exclude)
         return True
 
-    def __call__(self, dct: dict[str, Any]) -> dict[str, Any]:
-        """Filter a dict."""
-        return {k: v for k, v in dct.items() if self.match(k)}
-
+    def apply(self, data: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in data.items() if self.match(k)}
 
 class RawObservationsFilter:
     """Filter for including/excluding sensor module raw observation data.
@@ -290,15 +293,14 @@ class RawObservationsFilter:
     ):
         self._filter = IncludeExcludeFilter(include, exclude)
 
-    def __call__(self, buffer_data: dict[str, Any]) -> dict[str, Any]:
-        """Filter a dict."""
-        sm_ids = [k for k in buffer_data.keys() if k.startswith("SM_")]
+    def apply(self, episode_data: dict[str, Any]) -> dict[str, Any]:
+        sm_ids = [k for k in episode_data.keys() if k.startswith("SM_")]
         for sm_id in sm_ids:
-            sm_dict = buffer_data[sm_id]
-            raw_observations = sm_dict["raw_observations"]
+            sm_dict = episode_data[sm_id]
+            raw_observations = sm_dict.get("raw_observations", [])
             for i, row in enumerate(raw_observations):
-                raw_observations[i] = self._filter(row)
-        return buffer_data
+                raw_observations[i] = self._filter.apply(row)
+        return episode_data
 
 
 class BasicCSVStatsHandler(MontyHandler):
