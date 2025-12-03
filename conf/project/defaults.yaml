@@ -21,7 +21,7 @@ patch:
   zoom: 10.0
 
 view_finder:
-  resolution: [128, 128]
+  resolution: [256, 256]
   zoom: 1.0
   
 objects:

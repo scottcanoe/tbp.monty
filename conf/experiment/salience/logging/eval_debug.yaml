@@ -13,3 +13,5 @@ monty_handlers:
 
 wandb_handlers: []
 log_parallel_wandb: false
+
+detailed_save_per_episode: true
