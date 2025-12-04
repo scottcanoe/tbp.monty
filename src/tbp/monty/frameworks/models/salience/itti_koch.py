@@ -14,7 +14,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from .common import resize_to
+from .common import downsample
 from .strategies import SalienceStrategy
 
 
@@ -534,7 +534,7 @@ class IttiKoch(SalienceStrategy):
             for delta in (3, 4):
                 surround_level = center_level + delta
                 if surround_level < num_levels:
-                    resized_surround = resize_to(
+                    resized_surround = downsample(
                         gaussian_maps[surround_level],
                         target_shape,
                     )
@@ -663,7 +663,7 @@ class IttiKoch(SalienceStrategy):
         normalized_maps = []
         for feature_map in feature_maps:
             normalized = self._feat_map_normalization(feature_map)
-            resized = resize_to(normalized, shape)
+            resized = downsample(normalized, shape)
             normalized_maps.append(resized)
         return normalized_maps
 
@@ -727,7 +727,7 @@ class IttiKoch(SalienceStrategy):
         input_shape = rgba.shape[:2]
 
         if self.upsample_size is not None and self.upsample_size != input_shape:
-            rgba = resize_to(rgba, self.upsample_size)
+            rgba = downsample(rgba, self.upsample_size)
 
         src = as_rgba_float32(rgba)[:, :, :3]
         base_shape = src.shape[:2]
@@ -771,7 +771,7 @@ class IttiKoch(SalienceStrategy):
         normalized_salience = self._range_normalize(salience_matrix).astype(np.float32)
         smoothed_salience = cv2.bilateralFilter(normalized_salience, 7, 3, 1.55)
         if smoothed_salience.shape != input_shape:
-            smoothed_salience = resize_to(smoothed_salience, input_shape)
+            smoothed_salience = downsample(smoothed_salience, input_shape)
         if np.max(smoothed_salience) > 1:
             # smoothed_salience = smoothed_salience / np.max(smoothed_salience)
             raise ValueError("should already be normalized")
