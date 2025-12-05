@@ -14,7 +14,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from .common import downsample
+from .common import downsample, upsample
 from .strategies import SalienceStrategy
 
 
@@ -22,6 +22,7 @@ from .strategies import SalienceStrategy
 class IttiKochResult:
     rgba: np.ndarray | None = None
     depth: np.ndarray | None = None
+    pyramids: dict = field(default_factory=dict)
     feature_maps: dict = field(default_factory=dict)
     conspicuity_maps: dict = field(default_factory=dict)
     salience_map: np.ndarray | None = None
@@ -505,7 +506,7 @@ class IttiKoch(SalienceStrategy):
                 now_dst = cv2.pyrDown(dst[i - 1])
             else:
                 blurred = cv2.GaussianBlur(
-                    dst[-1], (5, 5), 0, 0, borderType=cv2.BORDER_REFLECT_101
+                    dst[-1], (5, 5), 0, 0, borderType=cv2.BORDER_REPLICATE
                 )
                 # Decimate by taking every other pixel starting at 0
                 now_dst = blurred[i % 2 :: 2, i % 2 :: 2]
@@ -529,31 +530,31 @@ class IttiKoch(SalienceStrategy):
         for center_level in center_levels:
             if center_level >= num_levels:
                 continue
-            target_shape = gaussian_maps[center_level].shape[:2]
+            h, w = gaussian_maps[center_level].shape[:2]
+            target_size = (w, h)
 
             for delta in (3, 4):
                 surround_level = center_level + delta
                 if surround_level < num_levels:
-                    resized_surround = downsample(
+                    resized_surround = cv2.resize(
                         gaussian_maps[surround_level],
-                        target_shape,
+                        target_size,
+                        interpolation=cv2.INTER_LINEAR,
                     )
                     diff = cv2.absdiff(gaussian_maps[center_level], resized_surround)
                     dst.append(diff)
 
         return dst
 
-    def _gaussian_pyr_center_surround_diff(self, src):
-        """Create Gaussian pyramid and compute center-surround differences"""
-        gaussian_maps = self._create_gaussian_pyramid(src)
-        dst = self._center_surround_diff(gaussian_maps)
+    def _get_intensity_FM(self, I):
+        """Get intensity feature maps"""
+        pyr = self._create_gaussian_pyramid(I)
+        dst = self._center_surround_diff(pyr)
+        self.result.pyramids["L"] = pyr
+        self.result.feature_maps["L"] = dst
         return dst
 
-    def _get_intensity_feat_maps(self, I):
-        """Get intensity feature maps"""
-        return self._gaussian_pyr_center_surround_diff(I)
-
-    def _get_color_feat_maps(
+    def _get_color_FM(
         self,
         r: np.ndarray,
         g: np.ndarray,
@@ -571,14 +572,22 @@ class IttiKoch(SalienceStrategy):
         rg[rg < 0] = 0
         by[by < 0] = 0
 
-        rg_feat_maps = self._gaussian_pyr_center_surround_diff(rg)
-        by_feat_maps = self._gaussian_pyr_center_surround_diff(by)
+        rg_pyr = self._create_gaussian_pyramid(rg)
+        rg_feat_maps = self._center_surround_diff(rg_pyr)
+        self.result.pyramids["a"] = rg_pyr
+        self.result.feature_maps["a"] = rg_feat_maps
+
+        by_pyr = self._create_gaussian_pyramid(by)
+        by_feat_maps = self._center_surround_diff(by_pyr)
+        self.result.pyramids["b"] = by_pyr
+        self.result.feature_maps["b"] = by_feat_maps
 
         return rg_feat_maps, by_feat_maps
 
-    def _get_orientation_feat_maps(self, src: np.ndarray) -> list[list[np.ndarray]]:
+    def _get_orientation_FM(self, src: np.ndarray) -> list[list[np.ndarray]]:
         """Get orientation feature maps, skipping Gabor filters on small levels."""
         gaussian_I = self._create_gaussian_pyramid(src)
+        self.result.pyramids["orientation"] = gaussian_I
 
         gabor_output_0 = [np.empty((1, 1)), np.empty((1, 1))]
         gabor_output_45 = [np.empty((1, 1)), np.empty((1, 1))]
@@ -618,6 +627,11 @@ class IttiKoch(SalienceStrategy):
         dst.extend(CSD_90)
         dst.extend(CSD_135)
 
+        self.result.feature_maps["orientation_0"] = CSD_0
+        self.result.feature_maps["orientation_1"] = CSD_45
+        self.result.feature_maps["orientation_2"] = CSD_90
+        self.result.feature_maps["orientation_3"] = CSD_135
+
         return dst
 
     def _range_normalize(self, src):
@@ -647,14 +661,14 @@ class IttiKoch(SalienceStrategy):
 
         return lmax_sum / num_local if num_local > 0 else 0
 
-    def _feat_map_normalization(self, src: np.ndarray) -> np.ndarray:
+    def _SM_normalization(self, src: np.ndarray) -> np.ndarray:
         """Normalization specific for saliency map model"""
         dst = self._range_normalize(src)
         lmax_mean = self._avg_local_max(dst)
         norm_coeff = (1 - lmax_mean) * (1 - lmax_mean)
         return dst * norm_coeff
 
-    def _normalize_feat_maps(
+    def _normalize_feature_maps(
         self,
         feature_maps: list[np.ndarray],
         shape: tuple[int, int],
@@ -662,37 +676,37 @@ class IttiKoch(SalienceStrategy):
         """Normalize feature maps and resize to target shape"""
         normalized_maps = []
         for feature_map in feature_maps:
-            normalized = self._feat_map_normalization(feature_map)
+            normalized = self._SM_normalization(feature_map)
             resized = downsample(normalized, shape)
             normalized_maps.append(resized)
         return normalized_maps
 
-    def _get_intensity_con_map(
+    def _get_intensity_CM(
         self,
         feat_maps: list[np.ndarray],
         shape: tuple[int, int],
     ) -> np.ndarray:
         """Get intensity conspicuity map"""
-        normed = self._normalize_feat_maps(feat_maps, shape)
+        normed = self._normalize_feature_maps(feat_maps, shape)
         return sum(normed) if normed else np.zeros(shape)
 
-    def _get_color_con_maps(
+    def _get_color_CM(
         self,
         rg_feat_maps: list[np.ndarray],
         by_feat_maps: list[np.ndarray],
         shape: tuple[int, int],
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Get color conspicuity map"""
-        rg_con_map = self._get_intensity_con_map(rg_feat_maps, shape)
-        by_con_map = self._get_intensity_con_map(by_feat_maps, shape)
+        rg_con_map = self._get_intensity_CM(rg_feat_maps, shape)
+        by_con_map = self._get_intensity_CM(by_feat_maps, shape)
         con_map = rg_con_map + by_con_map
         return rg_con_map, by_con_map, con_map
 
-    def _get_orientation_con_map(
+    def _get_orientation_CM(
         self,
         feat_maps: list[np.ndarray],
         shape: tuple[int, int],
-        ) -> np.ndarray:
+    ) -> np.ndarray:
         """Get orientation conspicuity map"""
         con_map = np.zeros(shape)
         maps_per_orientation = len(feat_maps) // 4 if len(feat_maps) >= 4 else 0
@@ -704,10 +718,11 @@ class IttiKoch(SalienceStrategy):
             if start_idx < len(feat_maps) and end_idx <= len(feat_maps):
                 orientation_maps = feat_maps[start_idx:end_idx]
                 if orientation_maps:
-                    angle_con_mat = self._get_intensity_con_map(
-                        orientation_maps, shape,
+                    angle_con_mat = self._get_intensity_CM(
+                        orientation_maps,
+                        shape,
                     )
-                    normalized_angle_con_mat = self._feat_map_normalization(angle_con_mat)
+                    normalized_angle_con_mat = self._SM_normalization(angle_con_mat)
                     con_map += normalized_angle_con_mat
 
         return con_map
@@ -723,44 +738,46 @@ class IttiKoch(SalienceStrategy):
             sal: Saliency map normalized to [0, 1]
         """
         result = IttiKochResult(rgba=rgba, depth=depth)
+        self.result = result
 
         input_shape = rgba.shape[:2]
 
         if self.upsample_size is not None and self.upsample_size != input_shape:
-            rgba = downsample(rgba, self.upsample_size)
+            rgba = cv2.resize(
+                rgba, self.upsample_size[::-1], interpolation=cv2.INTER_CUBIC
+            )
+            depth = cv2.resize(
+                depth, self.upsample_size[::-1], interpolation=cv2.INTER_NEAREST
+            )
 
-        src = as_rgba_float32(rgba)[:, :, :3]
+        rgb = rgba[:, :, :3]
+        if np.issubdtype(rgb.dtype, np.integer):
+            rgb = rgb / 255.0
+        rgb = rgb.astype(np.float32)
+
+        src = rgb
         base_shape = src.shape[:2]
 
-        result.info["src"] = src
+        result.image = src
 
         red, green, blue, intensity = self._extract_RGBI(src)
         result.info["RGBI"] = (red, green, blue, intensity)
 
         # intensity
-        intensity_feat_maps = self._get_intensity_feat_maps(intensity)
-        intensity_con_map = self._get_intensity_con_map(intensity_feat_maps, base_shape)
-        result.feature_maps["intensity"] = intensity_feat_maps
-        result.conspicuity_maps["intensity"] = intensity_con_map
+        intensity_feat_maps = self._get_intensity_FM(intensity)
+        intensity_con_map = self._get_intensity_CM(intensity_feat_maps, base_shape)
 
         # color
-        rg_feat_maps, by_feat_maps = self._get_color_feat_maps(red, green, blue)
-        rg_con_map, by_con_map, color_con_map = self._get_color_con_maps(
+        rg_feat_maps, by_feat_maps = self._get_color_FM(red, green, blue)
+        rg_con_map, by_con_map, color_con_map = self._get_color_CM(
             rg_feat_maps, by_feat_maps, base_shape
         )
-        result.feature_maps["rg"] = rg_feat_maps
-        result.feature_maps["by"] = by_feat_maps
-        result.conspicuity_maps["rg"] = rg_con_map
-        result.conspicuity_maps["by"] = by_con_map
-        result.conspicuity_maps["color"] = color_con_map
 
         # orientation
-        orientation_feat_maps = self._get_orientation_feat_maps(intensity)
-        orientation_con_map = self._get_orientation_con_map(
+        orientation_feat_maps = self._get_orientation_FM(intensity)
+        orientation_con_map = self._get_orientation_CM(
             orientation_feat_maps, base_shape
         )
-        result.feature_maps["orientation"] = orientation_feat_maps
-        result.conspicuity_maps["orientation"] = orientation_con_map
 
         salience_matrix = (
             self.weight_intensity * intensity_con_map
@@ -777,6 +794,25 @@ class IttiKoch(SalienceStrategy):
             raise ValueError("should already be normalized")
 
         salience_map = smoothed_salience.astype(np.float32)
+
+        result.feature_maps["L"] = intensity_feat_maps
+        result.conspicuity_maps["L"] = intensity_con_map
+
+        result.feature_maps["a"] = rg_feat_maps
+        result.feature_maps["b"] = by_feat_maps
+        result.conspicuity_maps["a"] = rg_con_map
+        result.conspicuity_maps["b"] = by_con_map
+        result.conspicuity_maps["color"] = color_con_map
+
+        result.feature_maps["orientation"] = orientation_feat_maps
+        result.conspicuity_maps["orientation"] = orientation_con_map
+        result.gabor_patches = [
+            self.GaborKernel0,
+            self.GaborKernel45,
+            self.GaborKernel90,
+            self.GaborKernel135,
+        ]
+
         result.salience_map = salience_map
 
         return result
@@ -784,11 +820,4 @@ class IttiKoch(SalienceStrategy):
     def __call__(self, rgba: np.ndarray, depth: np.ndarray | None = None) -> np.ndarray:
         return self.call(rgba, depth).salience_map
 
-
-
-
-def as_rgba_float32(rgba: np.ndarray) -> np.ndarray:
-    if np.issubdtype(rgba.dtype, np.integer):
-        return (rgba / 255.0).astype(np.float32)
-    return np.asarray(rgba, dtype=np.float32)
 

@@ -53,60 +53,11 @@ class PyramidStructure(Enum):
     CODI = 2  # Two pyramids derived from a base pyramid
 
 
-class VOCUS2Config:
-    """Configuration for VOCUS2 model."""
-
-    def __init__(
-        self,
-        c_space: ColorSpace = ColorSpace.OPPONENT_CODI,
-        fuse_feature: FusionOperation = FusionOperation.ARITHMETIC_MEAN,
-        fuse_conspicuity: FusionOperation = FusionOperation.ARITHMETIC_MEAN,
-        start_layer: int = 0,
-        stop_layer: int = 4,
-        center_sigma: float = 3.0,
-        surround_sigma: float = 13.0,
-        n_scales: int = 2,
-        normalize: bool = True,
-        pyramid_structure: PyramidStructure = PyramidStructure.VOCUS2,
-        orientation: bool = False,
-        combined_features: bool = False,
-        center_bias: float | None = None,
-    ):
-        """Initialize VOCUS2 configuration.
-
-        Args:
-            c_space: Color space to use
-            fuse_feature: How to fuse feature maps
-            fuse_conspicuity: How to fuse conspicuity maps
-            start_layer: First pyramid layer (0 = original resolution)
-            stop_layer: Last pyramid layer (each layer is half previous size)
-            center_sigma: Gaussian sigma for center pyramid
-            surround_sigma: Gaussian sigma for surround pyramid
-            n_scales: Number of scales per pyramid octave
-            normalize: Whether to normalize output to [0,1]
-            pyramid_structure: Pyramid structure to use
-            orientation: Whether to compute orientation features
-            combined_features: Whether to combine color channels before fusion
-        """
-        self.c_space = c_space
-        self.fuse_feature = fuse_feature
-        self.fuse_conspicuity = fuse_conspicuity
-        self.start_layer = start_layer
-        self.stop_layer = stop_layer
-        self.center_sigma = center_sigma
-        self.surround_sigma = surround_sigma
-        self.n_scales = n_scales
-        self.normalize = normalize
-        self.pyramid_structure = pyramid_structure
-        self.orientation = orientation
-        self.combined_features = combined_features
-        self.center_bias = center_bias
-
-
 @dataclass
 class VOCUS2Result:
     rgba: np.ndarray | None = None
     depth: np.ndarray | None = None
+    pyramids: dict = field(default_factory=dict)
     feature_maps: dict = field(default_factory=dict)
     conspicuity_maps: dict = field(default_factory=dict)
     salience_map: np.ndarray | None = None
@@ -125,13 +76,52 @@ class VOCUS2(SalienceStrategy):
     - Configurable multi-scale pyramids (octaves + scales)
     """
 
-    def __init__(self, cfg: VOCUS2Config | None = None):
-        """Initialize VOCUS2 with configuration.
+    def __init__(
+        self,
+        c_space: ColorSpace = ColorSpace.OPPONENT_CODI,
+        fuse_feature: FusionOperation = FusionOperation.ARITHMETIC_MEAN,
+        fuse_conspicuity: FusionOperation = FusionOperation.ARITHMETIC_MEAN,
+        start_layer: int = 0,
+        stop_layer: int = 3,
+        center_sigma: float = 3.0,
+        surround_sigma: float = 13.0,
+        n_scales: int = 2,
+        normalize: bool = True,
+        pyramid_structure: PyramidStructure = PyramidStructure.VOCUS2,
+        orientation: bool = True,
+        combined_features: bool = True,
+        center_bias: float | None = None,
+    ):
+        """Initialize VOCUS2.
 
         Args:
-            cfg: VOCUS2 configuration. If None, uses defaults.
+            c_space: Color space to use
+            fuse_feature: How to fuse feature maps
+            fuse_conspicuity: How to fuse conspicuity maps
+            start_layer: First pyramid layer (0 = original resolution)
+            stop_layer: Last pyramid layer (each layer is half previous size)
+            center_sigma: Gaussian sigma for center pyramid
+            surround_sigma: Gaussian sigma for surround pyramid
+            n_scales: Number of scales per pyramid octave
+            normalize: Whether to normalize output to [0,1]
+            pyramid_structure: Pyramid structure to use
+            orientation: Whether to compute orientation features
+            combined_features: Whether to combine color channels before fusion
+            center_bias: Strength of center bias (None to disable)
         """
-        self.cfg = cfg if cfg is not None else VOCUS2Config()
+        self._c_space = c_space
+        self._fuse_feature = fuse_feature
+        self._fuse_conspicuity = fuse_conspicuity
+        self._start_layer = start_layer
+        self._stop_layer = stop_layer
+        self._center_sigma = center_sigma
+        self._surround_sigma = surround_sigma
+        self._n_scales = n_scales
+        self._normalize = normalize
+        self._pyramid_structure = pyramid_structure
+        self._orientation = orientation
+        self._combined_features = combined_features
+        self._center_bias = center_bias
 
         # Orientation features
         self.patches = []
@@ -168,12 +158,12 @@ class VOCUS2(SalienceStrategy):
 
         # Convert colorspace.
         rgb = rgba[:, :, :3]
-        if self.cfg.c_space == ColorSpace.LAB:
+        if self._c_space == ColorSpace.LAB:
             # Convert to LAB
             converted = cv2.cvtColor(rgb, cv2.COLOR_RGB2Lab) / 255.0
             planes = cv2.split(converted)
 
-        elif self.cfg.c_space == ColorSpace.OPPONENT_CODI:
+        elif self._c_space == ColorSpace.OPPONENT_CODI:
             # Opponent color space (CoDi style)
             converted = rgb.astype(np.float32)
             R, G, B = cv2.split(converted)
@@ -182,7 +172,7 @@ class VOCUS2(SalienceStrategy):
             b = (B - (G + R) / 2.0) / 255.0
             planes = [L, a, b]
 
-        elif self.cfg.c_space == ColorSpace.OPPONENT:
+        elif self._c_space == ColorSpace.OPPONENT:
             # Opponent color space (shifted to [0,1])
             converted = rgb.astype(np.float32)
             R, G, B = cv2.split(converted)
@@ -192,7 +182,7 @@ class VOCUS2(SalienceStrategy):
             planes = [L, a, b]
 
         else:
-            raise ValueError(f"Unsupported color space: {self.cfg.c_space}")
+            raise ValueError(f"Unsupported color space: {self._c_space}")
 
         planes = [p.astype(np.float32) for p in planes]
         return cv2.merge(planes)
@@ -216,13 +206,13 @@ class VOCUS2(SalienceStrategy):
         Raises:
             ValueError: If unsupported pyramid structure is specified.
         """
-        if self.cfg.pyramid_structure == PyramidStructure.VOCUS2:
+        if self._pyramid_structure == PyramidStructure.VOCUS2:
             return self._pyramid_new(image)
-        if self.cfg.pyramid_structure == PyramidStructure.CODI:
+        if self._pyramid_structure == PyramidStructure.CODI:
             return self._pyramid_codi(image)
-        if self.cfg.pyramid_structure == PyramidStructure.CLASSIC:
+        if self._pyramid_structure == PyramidStructure.CLASSIC:
             return self._pyramid_classic(image)
-        raise ValueError(f"Unsupported pyramid structure: {self.cfg.pyramid_structure}")
+        raise ValueError(f"Unsupported pyramid structure: {self._pyramid_structure}")
 
     def _pyramid_new(self, image: np.ndarray):
         """Build pyramids using VOCUS2 structure (CVPR 2015 default).
@@ -231,11 +221,11 @@ class VOCUS2(SalienceStrategy):
         """
         # Build center pyramids
         planes = cv2.split(image)
-        center_sigma = self.cfg.center_sigma
-        surround_sigma = self.cfg.surround_sigma
-        start_layer = self.cfg.start_layer
-        stop_layer = self.cfg.stop_layer
-        n_scales = self.cfg.n_scales
+        center_sigma = self._center_sigma
+        surround_sigma = self._surround_sigma
+        start_layer = self._start_layer
+        stop_layer = self._stop_layer
+        n_scales = self._n_scales
 
         L_center = build_multiscale_pyramid(
             planes[0],
@@ -269,24 +259,21 @@ class VOCUS2(SalienceStrategy):
         for octave in range(n_octaves):
             for scale in range(n_scales):
                 scaled_sigma = adapted_sigma * (2.0 ** (scale / n_scales))
-                L_sur = L_center[octave, scale]
-                a_sur = a_center[octave, scale]
-                b_sur = b_center[octave, scale]
 
                 L_sur = cv2.GaussianBlur(
-                    L_sur,
+                    L_center[octave, scale],
                     (0, 0),
                     scaled_sigma,
                     borderType=cv2.BORDER_REPLICATE,
                 )
                 a_sur = cv2.GaussianBlur(
-                    a_sur,
+                    a_center[octave, scale],
                     (0, 0),
                     scaled_sigma,
                     borderType=cv2.BORDER_REPLICATE,
                 )
                 b_sur = cv2.GaussianBlur(
-                    b_sur,
+                    b_center[octave, scale],
                     (0, 0),
                     scaled_sigma,
                     borderType=cv2.BORDER_REPLICATE,
@@ -320,11 +307,11 @@ class VOCUS2(SalienceStrategy):
         Builds center and surround pyramids independently.
         """
         planes = cv2.split(image)
-        center_sigma = self.cfg.center_sigma
-        surround_sigma = self.cfg.surround_sigma
-        start_layer = self.cfg.start_layer
-        stop_layer = self.cfg.stop_layer
-        n_scales = self.cfg.n_scales
+        center_sigma = self._center_sigma
+        surround_sigma = self._surround_sigma
+        start_layer = self._start_layer
+        stop_layer = self._stop_layer
+        n_scales = self._n_scales
         # Build center and surround pyramids independently
         pyramids = {}
         for i, feat in enumerate(["L", "a", "b"]):
@@ -351,8 +338,8 @@ class VOCUS2(SalienceStrategy):
         b_base = self._build_multiscale_pyr(planes[2], 1.0)
 
         # Compute adapted sigmas
-        adapted_center_sigma = np.sqrt(self.cfg.center_sigma**2 - 1.0)
-        adapted_surround_sigma = np.sqrt(self.cfg.surround_sigma**2 - 1.0)
+        adapted_center_sigma = np.sqrt(self._center_sigma**2 - 1.0)
+        adapted_surround_sigma = np.sqrt(self._surround_sigma**2 - 1.0)
 
         # Initialize center and surround pyramids
         L_center = []
@@ -371,12 +358,12 @@ class VOCUS2(SalienceStrategy):
             a_surround.append([])
             b_surround.append([])
             # For each scale
-            for scale in range(self.cfg.n_scales):
+            for scale in range(self._n_scales):
                 scaled_center_sigma = adapted_center_sigma * (
-                    2.0 ** (scale / self.cfg.n_scales)
+                    2.0 ** (scale / self._n_scales)
                 )
                 scaled_surround_sigma = adapted_surround_sigma * (
-                    2.0 ** (scale / self.cfg.n_scales)
+                    2.0 ** (scale / self._n_scales)
                 )
 
                 # Smooth base pyramid to get center and surround
@@ -478,40 +465,41 @@ class VOCUS2(SalienceStrategy):
         a_off = feature_maps["a"]["off"].flat
         b_on = feature_maps["b"]["on"].flat
         b_off = feature_maps["b"]["off"].flat
+
         # Intensity/luminance
         conspicuity_maps["L"] = self._fuse(
             [
-                self._fuse(L_on, self.cfg.fuse_feature),
-                self._fuse(L_off, self.cfg.fuse_feature),
+                self._fuse(L_on, self._fuse_feature),
+                self._fuse(L_off, self._fuse_feature),
             ],
-            self.cfg.fuse_conspicuity,
+            self._fuse_conspicuity,
         )
 
         # Color opponency
-        if self.cfg.combined_features:
+        if self._combined_features:
             conspicuity_maps["ab"] = self._fuse(
                 [
-                    self._fuse(a_on, self.cfg.fuse_feature),
-                    self._fuse(a_off, self.cfg.fuse_feature),
-                    self._fuse(b_on, self.cfg.fuse_feature),
-                    self._fuse(b_off, self.cfg.fuse_feature),
+                    self._fuse(a_on, self._fuse_feature),
+                    self._fuse(a_off, self._fuse_feature),
+                    self._fuse(b_on, self._fuse_feature),
+                    self._fuse(b_off, self._fuse_feature),
                 ],
-                self.cfg.fuse_conspicuity,
+                self._fuse_conspicuity,
             )
         else:
             conspicuity_maps["a"] = self._fuse(
                 [
-                    self._fuse(a_on, self.cfg.fuse_feature),
-                    self._fuse(a_off, self.cfg.fuse_feature),
+                    self._fuse(a_on, self._fuse_feature),
+                    self._fuse(a_off, self._fuse_feature),
                 ],
-                self.cfg.fuse_conspicuity,
+                self._fuse_conspicuity,
             )
             conspicuity_maps["b"] = self._fuse(
                 [
-                    self._fuse(b_on, self.cfg.fuse_feature),
-                    self._fuse(b_off, self.cfg.fuse_feature),
+                    self._fuse(b_on, self._fuse_feature),
+                    self._fuse(b_off, self._fuse_feature),
                 ],
-                self.cfg.fuse_conspicuity,
+                self._fuse_conspicuity,
             )
 
         return conspicuity_maps
@@ -527,62 +515,63 @@ class VOCUS2(SalienceStrategy):
         """Compute orientation features using Gabor filters."""
         image = pyramids["L"]["center"]
         n_octaves = len(image)
-        n_scales = self.cfg.n_scales
-
-        # Build Laplacian pyramid
-        self.pyr_laplace = []
-        for _ in range(n_octaves):
-            self.pyr_laplace.append([])
-
-        # Build all layers except last
-        for octave in range(n_octaves - 1):
-            for scale in range(n_scales):
-                src1 = image[octave][scale]
-                src2 = image[octave + 1][scale]
-
-                # Resize next octave to current size
-                tmp = upsample(src2, src1.shape)
-                laplacian = src1 - tmp
-                self.pyr_laplace[octave].append(laplacian)
-
-        # Copy last layer
-        for scale in range(n_scales):
-            last_octave = n_octaves - 1
-            self.pyr_laplace[last_octave].append(image[last_octave][scale].copy())
+        n_scales = self._n_scales
 
         # Create Gabor kernels
-        filter_size = int(11 * self.cfg.center_sigma + 1)
+        filter_size = int(11 * self._center_sigma + 1)
         if filter_size % 2 == 0:
             filter_size += 1
 
+        # Build Laplacian pyramid
+        pyramid = []
+        for octave in range(n_octaves - 1):
+            shape_at_octave = image[octave][0].shape
+            if shape_at_octave[0] < filter_size or shape_at_octave[1] < filter_size:
+                break
+            pyramid.append([])
+            if octave == n_octaves - 1:
+                for scale in range(n_scales):
+                    pyramid[octave].append(image[octave][scale])
+            else:
+                for scale in range(n_scales):
+                    src1 = image[octave][scale]
+                    src2 = image[octave + 1][scale]
+                    # Resize next octave to current size
+                    tmp = upsample(src2, src1.shape)
+                    laplacian = src1 - tmp
+                    pyramid[octave].append(laplacian)
+
         self.gabor = [[] for _ in range(4)]  # 4 orientations
-        self.patches = []
+        self.gabor_patches = []
 
         feature_maps = {}
         for ori in range(4):
             theta = ori * np.pi / 4
             gabor_kernel = cv2.getGaborKernel(
                 (filter_size, filter_size),
-                sigma=self.cfg.center_sigma,
+                sigma=self._center_sigma * 0.75,
                 theta=theta,
-                lambd=self.cfg.center_sigma * 2,
-                gamma=0.5,
-                psi=0,
+                lambd=self._center_sigma * 2,
+                gamma=0.75,
+                psi=np.pi / 2,
                 ktype=cv2.CV_32F,
             )
 
             # Apply Gabor filter to each scale
-            for octave in range(n_octaves):
+            res = np.zeros((len(pyramid), n_scales), dtype=object)
+            for octave in range(len(pyramid)):
                 for scale in range(n_scales):
-                    if self.pyr_laplace[octave][scale] is not None:
-                        src = self.pyr_laplace[octave][scale]
-                        if src.shape[0] >= filter_size and src.shape[1] >= filter_size:
-                            dst = cv2.filter2D(src, cv2.CV_32F, gabor_kernel)
-                            dst = np.abs(dst)
-                            self.gabor[ori].append(dst)
-            feature_maps[f"orientation_{ori}"] = self.gabor[ori]
-            self.patches.append(gabor_kernel)
+                    src = pyramid[octave][scale]
+                    dst = cv2.filter2D(src, cv2.CV_32F, gabor_kernel)
+                    dst = np.abs(dst)
+                    res[octave][scale] = dst
+            feature_maps[f"orientation_{ori}"] = res
+            self.gabor_patches.append(gabor_kernel)
 
+        self.pyr_laplace = np.zeros((len(pyramid), n_scales), dtype=object)
+        for octave in range(len(pyramid)):
+            for scale in range(n_scales):
+                self.pyr_laplace[octave][scale] = pyramid[octave][scale]
         return feature_maps
 
     def _compute_orientation_conspicuity_maps(
@@ -592,13 +581,13 @@ class VOCUS2(SalienceStrategy):
         """Get conspicuity maps for orientation features."""
 
         conspicuity_maps = {
-            key: self._fuse(val, self.cfg.fuse_feature)
+            key: self._fuse(val.flat, self._fuse_feature)
             for key, val in feature_maps.items()
         }
-        if self.cfg.combined_features:
+        if self._combined_features:
             conspicuity_maps = {
                 "orientation": self._fuse(
-                    list(conspicuity_maps.values()), self.cfg.fuse_conspicuity
+                    list(conspicuity_maps.values()), self._fuse_conspicuity
                 )
             }
         return conspicuity_maps
@@ -660,30 +649,26 @@ class VOCUS2(SalienceStrategy):
         target_size = maps[0].shape[:2]
         fused = np.zeros(target_size, dtype=np.float32)
 
-        # Resize all maps to target size
-        resized = np.zeros((len(maps),) + target_size, dtype=np.float32)
-        for i, m in enumerate(maps):
-            if m.shape[:2] != target_size:
-                r = cv2.resize(
-                    m,
-                    (target_size[1], target_size[0]),
-                    interpolation=cv2.INTER_CUBIC,
-                )
-                resized[i] = r
-            else:
-                resized[i] = m
+        # # Resize all maps to target size
+        # resized = np.zeros((len(maps),) + target_size, dtype=np.float32)
+        # for i, m in enumerate(maps):
+        #     if m.shape[:2] != target_size:
+        #         r = cv2.resize(
+        #             m,
+        #             (target_size[1], target_size[0]),
+        #             interpolation=cv2.INTER_CUBIC,
+        #         )
+        #         resized[i] = r
+        #     else:
+        #         resized[i] = m
 
         if op == FusionOperation.ARITHMETIC_MEAN:
             # Simple average
-            for r in resized:
-                fused += r
-            fused /= len(resized)
+            fused = fuse_mean(maps)
 
         elif op == FusionOperation.MAX:
             # Maximum value
-            fused = resized[0].copy()
-            for r in resized[1:]:
-                fused = np.maximum(fused, r)
+            fused = fuse_max(maps)
 
         elif op == FusionOperation.UNIQUENESS_WEIGHT:
             # Weight by uniqueness
@@ -724,11 +709,11 @@ class VOCUS2(SalienceStrategy):
         """
         # Final saliency map
         salience_map = self._fuse(
-            list(conspicuity_maps.values()), self.cfg.fuse_conspicuity
+            list(conspicuity_maps.values()), self._fuse_conspicuity
         )
 
         # Normalize to [0,1]
-        if self.cfg.normalize:
+        if self._normalize:
             min_val = np.min(salience_map)
             max_val = np.max(salience_map)
             if max_val > min_val:
@@ -761,7 +746,7 @@ class VOCUS2(SalienceStrategy):
                 salience_map[r, c] *= fak
 
         # Normalize
-        if self.cfg.normalize:
+        if self._normalize:
             min_val = np.min(salience_map)
             max_val = np.max(salience_map)
             if max_val > min_val:
@@ -787,21 +772,31 @@ class VOCUS2(SalienceStrategy):
         image = self._prepare_input(rgba)  # e.g. [L, a, b] for LAB
         pyramids = self._compute_pyramids(image)
 
-        feature_maps = self._compute_color_feature_maps(pyramids)
-        conspicuity_maps = self._compute_color_conspicuity_maps(feature_maps)
+        color_feature_maps = self._compute_color_feature_maps(pyramids)
+        color_conspicuity_maps = self._compute_color_conspicuity_maps(
+            color_feature_maps
+        )
 
-        if self.cfg.orientation:
+        if self._orientation:
             orientation_feature_maps = self._compute_orientation_feature_maps(pyramids)
             orientation_conspicuity_maps = self._compute_orientation_conspicuity_maps(
                 orientation_feature_maps
             )
-            feature_maps.update(orientation_feature_maps)
-            conspicuity_maps.update(orientation_conspicuity_maps)
+        else:
+            orientation_feature_maps = {}
+            orientation_conspicuity_maps = {}
+
+        feature_maps = {}
+        feature_maps.update(color_feature_maps)
+        feature_maps.update(orientation_feature_maps)
+        conspicuity_maps = {}
+        conspicuity_maps.update(color_conspicuity_maps)
+        conspicuity_maps.update(orientation_conspicuity_maps)
 
         salience_map = self._compute_salience_map(conspicuity_maps)
 
-        if self.cfg.center_bias:
-            salience_map = self._add_center_bias(salience_map, self.cfg.center_bias)
+        if self._center_bias:
+            salience_map = self._add_center_bias(salience_map, self._center_bias)
 
         if salience_map.shape[:2] != input_shape:
             salience_map = cv2.resize(
@@ -810,11 +805,15 @@ class VOCUS2(SalienceStrategy):
                 interpolation=cv2.INTER_CUBIC,
             )
 
+        result.image = image
         result.pyramids = pyramids
         result.feature_maps = feature_maps
         result.conspicuity_maps = conspicuity_maps
         result.salience_map = salience_map
-        result.image = image
+
+        result.gabor_patches = self.gabor_patches
+        result.pyramids["orientation"] = self.pyr_laplace
+
         return result
 
     def __call__(
@@ -824,12 +823,32 @@ class VOCUS2(SalienceStrategy):
         return self.call(rgba, depth).salience_map
 
 
+def merge_octaves(maps: Sequence[np.ndarray]) -> list[np.ndarray]:
+    target_size = maps[0].shape[:2]
+    merged = np.zeros((len(maps),) + target_size, dtype=np.float32)
+    for i, m in enumerate(maps):
+        if m.shape[:2] != target_size:
+            merged[i] = upsample(m, target_size)
+        else:
+            merged[i] = m
+
+    return merged
+
+
+def fuse_mean(maps: Sequence[np.ndarray]) -> np.ndarray:
+    return merge_octaves(maps).mean(axis=0)
+
+
+def fuse_max(maps: Sequence[np.ndarray]) -> np.ndarray:
+    return merge_octaves(maps).max(axis=0)
+
+
 def build_multiscale_pyramid(
     image: np.ndarray,
     sigma: float,
-    n_scales: int = 2,
-    start_layer: int = 0,
-    stop_layer: int = 4,
+    n_scales: int,
+    start_layer: int,
+    stop_layer: int,
 ) -> np.ndarray:
     """Build multi-scale pyramid following Lowe 2004.
 
