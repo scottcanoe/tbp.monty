@@ -10,7 +10,7 @@ config:
   n_eval_epochs: 1
   model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral_step_3_obj_distinct/pretrained/
   logging:
-    run_name: debug_snapshots
+    run_name: snapshots
     
     detailed_filters:
       - _target_: tbp.monty.frameworks.loggers.monty_handlers.IncludeExcludeFilter
