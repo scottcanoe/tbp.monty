@@ -557,6 +557,10 @@ class VOCUS2(SalienceStrategy):
                 ktype=cv2.CV_32F,
             )
 
+            # Normalize kernel
+            k_sum = np.sum(np.abs(gabor_kernel))
+            gabor_kernel /= k_sum
+
             # Apply Gabor filter to each scale
             res = np.zeros((len(pyramid), n_scales), dtype=object)
             for octave in range(len(pyramid)):
