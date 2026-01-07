@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from tbp.monty.frameworks.models.abstract_monty_classes import SensorModule
@@ -125,10 +126,10 @@ class HabitatSalienceSM(SensorModule):
         self, salience: np.ndarray, ior_weights: np.ndarray
     ) -> np.ndarray:
         decay_factor = 0.75
-        return salience - decay_factor * ior_weights
+        return salience * (1 - decay_factor * ior_weights)
 
     def _randomize_salience(self, weighted_salience: np.ndarray) -> np.ndarray:
-        randomness_factor = 0.05
+        randomness_factor = 0.05 * weighted_salience.max()
         weighted_salience += self._rng.normal(
             loc=0, scale=randomness_factor, size=weighted_salience.shape[0]
         )

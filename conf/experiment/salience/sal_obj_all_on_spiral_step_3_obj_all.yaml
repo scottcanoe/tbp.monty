@@ -1,0 +1,14 @@
+defaults:
+  - /experiment/salience/eval@_here_
+  - /experiment/salience/sensor_modules/view_finder/sal@config.monty_config.sensor_module_configs.sensor_module_1
+  - /experiment/salience/motor_system/lookat@config.monty_config.motor_system_config
+  - _self_
+
+config:
+  
+  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral_step_3_obj_all/pretrained/
+  logging:
+    run_name: sal_obj_all_on_spiral_step_3_obj_all
+  
+  eval_env_interface_args:
+    object_names: ${project.objects.all}

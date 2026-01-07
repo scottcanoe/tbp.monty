@@ -1,40 +1,47 @@
 defaults:
   - /experiment/salience/eval@_here_
-  - /experiment/salience/sensor_modules/view_finder/uniform@config.monty_config.sensor_module_configs.sensor_module_1
+  # - /experiment/salience/sensor_modules/view_finder/uniform@config.monty_config.sensor_module_configs.sensor_module_1
+  - /experiment/salience/sensor_modules/view_finder/sal@config.monty_config.sensor_module_configs.sensor_module_1
   - /experiment/salience/motor_system/lookat@config.monty_config.motor_system_config
   - /experiment/salience/logging/eval_debug@config.logging
   - _self_
 
 config:
   n_eval_epochs: 1
-  max_eval_steps: 10
+  max_eval_steps: 50
   model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral_step_3_obj_all/pretrained/
   logging:
-    run_name: debug_detailed
+    run_name: debug_ior
 
     detailed_filters:
       - _target_: tbp.monty.frameworks.loggers.monty_handlers.IncludeExcludeFilter
         exclude:
           - "LM_0"
           
-      # - _target_: tbp.monty.frameworks.loggers.monty_handlers.RawObservationsFilter
-      #   include:
-      #     - "goals"
+      - _target_: tbp.monty.frameworks.loggers.monty_handlers.RawObservationsFilter
+        include:
+          - "goals"
 
   monty_config:
     sensor_module_configs:
       sensor_module_0:
         sensor_module_args:
-          save_raw_obs: true
+          save_raw_obs: false
           noise_params: null
       sensor_module_1:
         sensor_module_args:
           save_raw_obs: true
   
+  env_interface_config:
+    env_init_args:
+      data_path: ${path.expanduser:${oc.env:MONTY_DATA}/compositional_objects}
+
   eval_env_interface_args:
     # object_names: ${project.objects.distinct}
     object_names:
-      - potted_meat_can
+      # - potted_meat_can
+      - 002_cube_tbp_horz
+
     object_init_sampler:
       rotations:
         - [0, 0, 0]

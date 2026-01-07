@@ -12,6 +12,5 @@ monty_handlers:
   - ${monty.class:tbp.monty.frameworks.loggers.monty_handlers.ReproduceEpisodeHandler}
 
 wandb_handlers: []
-log_parallel_wandb: false
 
 detailed_save_per_episode: true

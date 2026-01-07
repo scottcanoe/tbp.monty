@@ -2,3 +2,4 @@ defaults:
   - /experiment/salience/logging/defaults@_here_
 
 output_dir: ${project.paths.pretrain_dir}
+log_parallel_wandb: false

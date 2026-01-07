@@ -10,7 +10,7 @@ monty_handlers: []
 wandb_group: ${project.wandb_group}
 wandb_handlers: []
 resume_wandb_run: false
-log_parallel_wandb: false
+
 wandb_id:
   _target_: wandb.util.generate_id
 

@@ -67,9 +67,9 @@ class DecayKernel:
     def __init__(
         self,
         location: np.ndarray,
-        tau_t: float = 10.0,
+        tau_t: float = 4.0,
         tau_s: float = 0.01,
-        spatial_cutoff: float | None = 0.02,
+        spatial_cutoff: float | None = 0.01,
         w_t_min: float = 0.1,
         accelerated: bool = True,
     ):
@@ -143,9 +143,9 @@ class DecayKernel:
 class DecayKernelFactory:
     def __init__(
         self,
-        tau_t: float = 10.0,
-        tau_s: float = 0.01,
-        spatial_cutoff: float | None = 0.02,
+        tau_t: float = 7.50,
+        tau_s: float = 0.015,
+        spatial_cutoff: float | None = 0.025,
         w_t_min: float = 0.1,
         accelerated: bool = True,
     ):

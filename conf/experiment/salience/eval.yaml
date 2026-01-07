@@ -32,8 +32,8 @@ config:
     
     monty_class: ${monty.class:tbp.monty.frameworks.models.evidence_matching.model.MontyForEvidenceGraphMatching}
     monty_args:
-      min_eval_steps: 10
-      min_train_steps: 10
+      min_eval_steps: 20
+      min_train_steps: 20
       max_total_steps: 1000
       num_exploratory_steps: 500
     sm_to_agent_dict:
