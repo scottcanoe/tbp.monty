@@ -17,7 +17,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence, cast
+from typing import Any, Literal, Mapping, cast
 
 import numpy as np
 import quaternion as qt
