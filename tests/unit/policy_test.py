@@ -11,6 +11,7 @@
 import pytest
 
 from tbp.monty.frameworks.experiments.monty_experiment import ExperimentMode
+from tests.unit import test_utils
 
 pytest.importorskip(
     "habitat_sim",
@@ -56,6 +57,7 @@ from tbp.monty.frameworks.models.motor_system_state import (
 from tbp.monty.frameworks.models.states import State
 from tbp.monty.frameworks.utils.dataclass_utils import config_to_dict
 from tbp.monty.frameworks.utils.transform_utils import numpy_to_scipy_quat
+from tests.unit.test_utils import motor_system_states_equal
 
 
 class PolicyTest(unittest.TestCase):
@@ -441,94 +443,29 @@ class PolicyTest(unittest.TestCase):
             exp.pre_episode()
 
             # Manually step through part of run_episode function
+            is_on_object = []
+            motor_system_states = []
             for loader_step, observation in enumerate(exp.env_interface):
                 exp.model.step(observation)
-
-                last_action = exp.model.motor_system.last_action[-1]
-
-                if loader_step == 3:
-                    stored_action = last_action
-                    assert not exp.model.learning_modules[
-                        0
-                    ].buffer.get_last_obs_processed(), "Should be off object"
-
+                sm_state = exp.model.sensor_module_outputs[0]
+                is_on_object.append(bool(sm_state.morphological_features["on_object"]))
+                motor_system_states.append(exp.model.motor_system._state)
                 if loader_step == 4:
-                    should_have_moved_back = (
-                        "Should have moved back by reversing last movement"
-                    )
-                    self.assertIsInstance(
-                        last_action, type(stored_action), should_have_moved_back
-                    )
-                    if isinstance(stored_action, (LookDown, LookUp)):
-                        self.assertEqual(
-                            last_action.rotation_degrees,
-                            -stored_action.rotation_degrees,
-                            should_have_moved_back,
-                        )
-                        self.assertEqual(
-                            last_action.constraint_degrees,
-                            stored_action.constraint_degrees,
-                            should_have_moved_back,
-                        )
-                    elif isinstance(stored_action, (TurnLeft, TurnRight)):
-                        self.assertEqual(
-                            last_action.rotation_degrees,
-                            -stored_action.rotation_degrees,
-                            should_have_moved_back,
-                        )
-                    elif isinstance(stored_action, MoveForward):
-                        self.assertEqual(
-                            last_action.distance,
-                            -stored_action.distance,
-                            should_have_moved_back,
-                        )
-                    elif isinstance(stored_action, MoveTangentially):
-                        self.assertEqual(
-                            last_action.distance,
-                            -stored_action.distance,
-                            should_have_moved_back,
-                        )
-                        self.assertEqual(
-                            last_action.direction,
-                            stored_action.direction,
-                            should_have_moved_back,
-                        )
-                    elif isinstance(stored_action, OrientHorizontal):
-                        self.assertEqual(
-                            last_action.rotation_degrees,
-                            -stored_action.rotation_degrees,
-                            should_have_moved_back,
-                        )
-                        self.assertEqual(
-                            last_action.left_distance,
-                            -stored_action.left_distance,
-                            should_have_moved_back,
-                        )
-                        self.assertEqual(
-                            last_action.forward_distance,
-                            -stored_action.forward_distance,
-                            should_have_moved_back,
-                        )
-                    elif isinstance(stored_action, OrientVertical):
-                        self.assertEqual(
-                            last_action.rotation_degrees,
-                            -stored_action.rotation_degrees,
-                            should_have_moved_back,
-                        )
-                        self.assertEqual(
-                            last_action.down_distance,
-                            -stored_action.down_distance,
-                            should_have_moved_back,
-                        )
-                        self.assertEqual(
-                            last_action.forward_distance,
-                            -stored_action.forward_distance,
-                            should_have_moved_back,
-                        )
-                    assert exp.model.learning_modules[
-                        0
-                    ].buffer.get_last_obs_processed(), "Should be back on object"
-                    break  # Don't go into exploratory mode
+                    break
+        # Sanity check that we've moved off and on the object as expected.
+        self.assertEqual(
+            is_on_object,
+            [True, True, True, False, True],
+            "Assumptions not met for this test.",
+        )
+
+        # Stricter check that the motor system states before and after
+        # moving off-object are equal.
+        self.assertTrue(
+            motor_system_states_equal(motor_system_states[2], motor_system_states[4]),
+            "Motor system states before and after moving off-object are not equal.",
+        )
+
 
     def test_surface_policy_moves_back_to_object(self):
         """Test ability of surface agent to move back to an object.
