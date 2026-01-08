@@ -917,43 +917,53 @@ class InformedPolicy(BasePolicy, JumpToGoalStateMixin):
         inverse_actions = []
         for action in reversed(self.last_action):
             if isinstance(action, LookDown):
-                inv = LookDown(
-                    agent_id=action.agent_id,
-                    rotation_degrees=-action.rotation_degrees,
-                    constraint_degrees=action.constraint_degrees,
+                inverse_actions.append(
+                    LookDown(
+                        agent_id=action.agent_id,
+                        rotation_degrees=-action.rotation_degrees,
+                        constraint_degrees=action.constraint_degrees,
+                    )
                 )
             elif isinstance(action, LookUp):
-                inv = LookUp(
-                    agent_id=action.agent_id,
-                    rotation_degrees=-action.rotation_degrees,
-                    constraint_degrees=action.constraint_degrees,
+                inverse_actions.append(
+                    LookUp(
+                        agent_id=action.agent_id,
+                        rotation_degrees=-action.rotation_degrees,
+                        constraint_degrees=action.constraint_degrees,
+                    )
                 )
             elif isinstance(action, TurnLeft):
-                inv = TurnLeft(
-                    agent_id=action.agent_id,
-                    rotation_degrees=-action.rotation_degrees,
+                inverse_actions.append(
+                    TurnLeft(
+                        agent_id=action.agent_id,
+                        rotation_degrees=-action.rotation_degrees,
+                    )
                 )
             elif isinstance(action, TurnRight):
-                inv = TurnRight(
-                    agent_id=action.agent_id,
-                    rotation_degrees=-action.rotation_degrees,
+                inverse_actions.append(
+                    TurnRight(
+                        agent_id=action.agent_id,
+                        rotation_degrees=-action.rotation_degrees,
+                    )
                 )
             elif isinstance(action, MoveForward):
-                inv = MoveForward(
-                    agent_id=action.agent_id,
-                    distance=-action.distance,
+                inverse_actions.append(
+                    MoveForward(
+                        agent_id=action.agent_id,
+                        distance=-action.distance,
+                    )
                 )
             elif isinstance(action, MoveTangentially):
-                inv = MoveTangentially(
-                    agent_id=action.agent_id,
-                    distance=-action.distance,
-                    # Same direction, negative distance
-                    direction=action.direction,
+                inverse_actions.append(
+                    MoveTangentially(
+                        agent_id=action.agent_id,
+                        distance=-action.distance,
+                        # Same direction, negative distance
+                        direction=action.direction,
+                    )
                 )
             else:
                 raise TypeError(f"Invalid action: {action}")
-
-            inverse_actions.append(inv)
 
         return inverse_actions
 
