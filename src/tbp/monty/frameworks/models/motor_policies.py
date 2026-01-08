@@ -914,56 +914,47 @@ class InformedPolicy(BasePolicy, JumpToGoalStateMixin):
         An Action.undo of some sort would be a better solution, however it is not
         yet clear to me what to do for actions that do not support undo.
         """
-        inverse_actions = []
+        inverse_actions: list[Action] = []
+        inv: Action
         for action in reversed(self.last_action):
             if isinstance(action, LookDown):
-                inverse_actions.append(
-                    LookDown(
-                        agent_id=action.agent_id,
-                        rotation_degrees=-action.rotation_degrees,
-                        constraint_degrees=action.constraint_degrees,
-                    )
+                inv = LookDown(
+                    agent_id=action.agent_id,
+                    rotation_degrees=-action.rotation_degrees,
+                    constraint_degrees=action.constraint_degrees,
                 )
+
             elif isinstance(action, LookUp):
-                inverse_actions.append(
-                    LookUp(
-                        agent_id=action.agent_id,
-                        rotation_degrees=-action.rotation_degrees,
-                        constraint_degrees=action.constraint_degrees,
-                    )
+                inv = LookUp(
+                    agent_id=action.agent_id,
+                    rotation_degrees=-action.rotation_degrees,
+                    constraint_degrees=action.constraint_degrees,
                 )
             elif isinstance(action, TurnLeft):
-                inverse_actions.append(
-                    TurnLeft(
-                        agent_id=action.agent_id,
-                        rotation_degrees=-action.rotation_degrees,
-                    )
+                inv = TurnLeft(
+                    agent_id=action.agent_id,
+                    rotation_degrees=-action.rotation_degrees,
                 )
             elif isinstance(action, TurnRight):
-                inverse_actions.append(
-                    TurnRight(
-                        agent_id=action.agent_id,
-                        rotation_degrees=-action.rotation_degrees,
-                    )
+                inv = TurnRight(
+                    agent_id=action.agent_id,
+                    rotation_degrees=-action.rotation_degrees,
                 )
             elif isinstance(action, MoveForward):
-                inverse_actions.append(
-                    MoveForward(
-                        agent_id=action.agent_id,
-                        distance=-action.distance,
-                    )
+                inv = MoveForward(
+                    agent_id=action.agent_id,
+                    distance=-action.distance,
                 )
             elif isinstance(action, MoveTangentially):
-                inverse_actions.append(
-                    MoveTangentially(
-                        agent_id=action.agent_id,
-                        distance=-action.distance,
-                        # Same direction, negative distance
-                        direction=action.direction,
-                    )
+                inv = MoveTangentially(
+                    agent_id=action.agent_id,
+                    distance=-action.distance,
+                    # Same direction, negative distance
+                    direction=action.direction,
                 )
             else:
                 raise TypeError(f"Invalid action: {action}")
+            inverse_actions.append(inv)
 
         return inverse_actions
 
