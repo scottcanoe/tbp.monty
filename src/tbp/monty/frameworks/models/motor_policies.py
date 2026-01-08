@@ -17,7 +17,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Mapping, cast
+from typing import Any, Literal, Mapping, Sequence, cast
 
 import numpy as np
 import quaternion as qt
@@ -58,7 +58,9 @@ class MotorPolicy(abc.ABC):
         self.is_predefined = False
 
     @abc.abstractmethod
-    def dynamic_call(self, state: MotorSystemState | None = None) -> Action | None:
+    def dynamic_call(
+        self, state: MotorSystemState | None = None
+    ) -> list[Action] | Action | None:
         """Use this method when actions are not predefined.
 
         Args:
@@ -72,13 +74,15 @@ class MotorPolicy(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def last_action(self) -> Action:
+    def last_action(self) -> list[Action] | Action:
         """Returns the last action taken by the motor policy."""
         pass
 
     @abc.abstractmethod
     def post_action(
-        self, action: Action | None, state: MotorSystemState | None = None
+        self,
+        action: list[Action] | Action | None,
+        state: MotorSystemState | None = None,
     ) -> None:
         """This post action hook will automatically be called at the end of __call__.
 
@@ -104,7 +108,7 @@ class MotorPolicy(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def predefined_call(self) -> Action:
+    def predefined_call(self) -> list[Action] | Action:
         """Use this method when actions are predefined.
 
         Returns:
@@ -121,7 +125,7 @@ class MotorPolicy(abc.ABC):
         """
         pass
 
-    def __call__(self, state: MotorSystemState | None = None) -> list[Action]:
+    def __call__(self, state: MotorSystemState | None = None) -> list[Action] | Action:
         """Select either dynamic or predefined call.
 
         Args:
@@ -132,11 +136,15 @@ class MotorPolicy(abc.ABC):
             The actions to take.
         """
         if self.is_predefined:
-            action: Action | None = self.predefined_call()
+            action = self.predefined_call()
         else:
             action = self.dynamic_call(state)
         self.post_action(action, state)
-        return [action] if action else []
+        if isinstance(action, Action):
+            return [action]
+        if action is None:
+            return []
+        return action
 
 
 class BasePolicy(MotorPolicy):
@@ -206,7 +214,9 @@ class BasePolicy(MotorPolicy):
     # Methods that define behavior of __call__
     ###
 
-    def dynamic_call(self, _state: MotorSystemState | None = None) -> Action | None:
+    def dynamic_call(
+        self, _state: MotorSystemState | None = None
+    ) -> list[Action] | Action | None:
         """Return a random action.
 
         The MotorSystemState is ignored.
@@ -220,7 +230,7 @@ class BasePolicy(MotorPolicy):
         """
         return self.get_random_action(self.action)
 
-    def get_random_action(self, action: Action) -> Action:
+    def get_random_action(self, action: Action) -> list[Action] | Action:
         """Returns random action sampled from allowable actions.
 
         Enables expanding the action space of the base policy with actions that
@@ -291,7 +301,7 @@ class BasePolicy(MotorPolicy):
         return agent_state.motor_only_step
 
     @property
-    def last_action(self) -> Action:
+    def last_action(self) -> list[Action] | Action:
         return self.action
 
     def state_dict(self):
