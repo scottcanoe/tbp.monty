@@ -18,13 +18,18 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
-from tbp.monty.frameworks.models.salience.vocus2 import ColorSpace
-
 """
-- image utilities
+- Color
 -------------------------------------------------------------------------------
 """
 
+
+class ColorSpace(Enum):
+    """Color space options."""
+
+    LAB = 0  # CIE Lab color space
+    OPPONENT_CODI = 1  # Opponent color space (like Klein/Frintrop DAGM 2012)
+    OPPONENT = 2  # Opponent color space (shifted and scaled to [0,1])
 
 
 def rgb_to_lab(image: np.ndarray) -> np.ndarray:
@@ -36,39 +41,39 @@ def lab_to_rgb(image: np.ndarray) -> np.ndarray:
 
 
 def rgb_to_opponent(image: np.ndarray) -> np.ndarray:
-    R, G, B = cv2.split(image.astype(np.float32))
-    L = (R + G + B) / (3 * 255.0)
-    a = (R - G + 255.0) / (2 * 255.0)
-    b = (B - (G + R) / 2.0 + 255.0) / (2 * 255.0)
+    r, g, b = cv2.split(image.astype(np.float32))
+    L = (r + g + b) / (3 * 255.0)  # noqa: N806
+    a = (r - g + 255.0) / (2 * 255.0)
+    b = (b - (g + r) / 2.0 + 255.0) / (2 * 255.0)
     return cv2.merge([L, a, b])
 
 
 def opponent_to_rgb(image: np.ndarray) -> np.ndarray:
-    L, a, b = cv2.split(image)
-    R = 255 * L + 255 * a - 170 * b - 42.5
-    G = 255 * L - 255 * a - 170 * b + 212.5
-    B = 255 * L + 340 * b - 170
-    return cv2.merge([R, G, B]).astype(np.uint8)
+    L, a, b = cv2.split(image)  # noqa: N806
+    r = 255 * L + 255 * a - 170 * b - 42.5
+    g = 255 * L - 255 * a - 170 * b + 212.5
+    b = 255 * L + 340 * b - 170
+    return cv2.merge([r, g, b]).astype(np.uint8)
 
 
 def rgb_to_opponent_codi(image: np.ndarray) -> np.ndarray:
-    R, G, B = cv2.split(image.astype(np.float32))
-    L = (R + G + B) / (3 * 255.0)
-    a = (R - G) / 255.0
-    b = (B - (G + R) / 2.0) / 255.0
+    r, g, b = cv2.split(image.astype(np.float32))
+    L = (r + g + b) / (3 * 255.0)  # noqa: N806
+    a = (r - g) / 255.0
+    b = (b - (g + r) / 2.0) / 255.0
     return cv2.merge([L, a, b])
 
 
 def opponent_codi_to_rgb(image: np.ndarray) -> np.ndarray:
-    L, a, b = cv2.split(image)
-    R = 255 * L + 127.5 * a - 85 * b
-    G = 255 * L - 127.5 * a - 85 * b
-    B = 255 * L + 170 * b
-    return cv2.merge([R, G, B]).astype(np.uint8)
+    L, a, b = cv2.split(image)  # noqa: N806
+    r = 255 * L + 127.5 * a - 85 * b
+    g = 255 * L - 127.5 * a - 85 * b
+    b = 255 * L + 170 * b
+    return cv2.merge([r, g, b]).astype(np.uint8)
 
 
 def gaussian_blur(image: np.ndarray, sigma: float, truncate: float = 2.5) -> np.ndarray:
-    ksize = int(round(2 * truncate * sigma + 1)) | 1  # Ensure odd
+    ksize = round(2 * truncate * sigma + 1) | 1  # Ensure odd
     return cv2.GaussianBlur(
         image, (ksize, ksize), sigma, borderType=cv2.BORDER_REPLICATE
     )
@@ -82,16 +87,16 @@ def resize(
     return cv2.resize(image, (shape[1], shape[0]), interpolation=interpolation)
 
 
-
 """
-- Gaussian Pyramid
+ - Pyramid
 -------------------------------------------------------------------------------
 """
+
+
 @dataclass(frozen=True)
 class Pyramid:
-    
     data: np.ndarray
-    
+
     def __post_init__(self):
         assert isinstance(self.data, np.ndarray)
         assert np.issubdtype(self.data.dtype, np.object_)
@@ -113,18 +118,18 @@ class Pyramid:
     def flat(self) -> Iterator[np.ndarray]:
         return self.data.flat
 
-    def apply(self, func: Callable) -> "Pyramid":
+    def apply(self, func: Callable) -> Pyramid:
         data = np.zeros(self.data.size, dtype=object)
         for i, arr in enumerate(self.data.flat):
             data[i] = func(arr)
         return Pyramid(data.reshape(self.data.shape))
 
-    def __add__(self, other: "Pyramid") -> "Pyramid":
+    def __add__(self, other: Pyramid) -> Pyramid:
         return Pyramid(self.data + other.data)
-    
-    def __sub__(self, other: "Pyramid") -> "Pyramid":
+
+    def __sub__(self, other: Pyramid) -> Pyramid:
         return Pyramid(self.data - other.data)
-    
+
     def __repr__(self) -> str:
         return f"Pyramid(shape={self.shape}, size={self.size}, ndim={self.ndim})"
 
@@ -135,6 +140,12 @@ class Pyramid:
         return len(self.data)
 
 
+"""
+- Pyramid Building
+------------------------------------------------------------------------------
+"""
+
+
 def pyramid_level_shapes(
     image_shape: tuple[int, int],
     max_levels: int | None = None,
@@ -143,13 +154,13 @@ def pyramid_level_shapes(
     """Compute the shapes of the pyramid levels.
 
     Args:
-        base_shape: The shape of the base level.
+        image_shape: The shape of the image from which the pyramid will be built.
         max_levels: The maximum number of levels in the pyramid.
         min_size: The minimum size of the pyramid levels.
+
     Returns:
         A list of tuples, each containing the shape of a pyramid level.
     """
-
     max_possible_octaves = int(np.log2(min(image_shape))) + 1
     if max_levels:
         max_levels = min(max_levels, max_possible_octaves)
@@ -167,67 +178,6 @@ def pyramid_level_shapes(
     return shapes
 
 
-
-class PyramidCombine(Protocol):
-    def __call__(self, pyramids: Sequence[Pyramid]) -> Pyramid: ...
-
-class PyramidCollapse(Protocol):
-    def __call__(self, pyr: Pyramid) -> np.ndarray: ...
-
-
-def pyramid_combine(
-    pyramids: Sequence[Pyramid],
-    fn: Callable[[Sequence[np.ndarray]], np.ndarray],
-    ) -> np.ndarray:
-    n_pyramids = len(pyramids)
-    if n_pyramids == 0:
-        raise ValueError("No pyramids to combine")
-    elif n_pyramids == 1:
-        return pyramids[0]
-
-    pyr_arrays = [pyr.data for pyr in pyramids]
-    pyr_shape = pyr_arrays[0].shape
-    assert all(pyr.shape == pyr_shape for pyr in pyr_arrays[1:])
-    pyr_size = pyr_arrays[0].size
-    new_data = np.zeros(pyr_size, dtype=object)
-    for i, images in enumerate(zip(*[pyr.flat for pyr in pyramids])):
-        target_shape = images[0].shape
-        resized = [resize(img, target_shape) if img.shape != target_shape else img for img in images]
-        new_data[i] = fn(resized)
-    new_data = new_data.reshape(pyr_shape)
-    return Pyramid(new_data)
-
-
-def pyramid_combine_max(pyramids: Sequence[Pyramid]) -> Pyramid:
-    return pyramid_combine(pyramids, lambda x: np.max(x, axis=0))
-
-def pyramid_combine_mean(pyramids: Sequence[Pyramid]) -> Pyramid:
-    return pyramid_combine(pyramids, lambda x: np.mean(x, axis=0))
-
-
-def pyramid_collapse(
-    pyr: Pyramid,
-    fn: Callable[[Sequence[np.ndarray]], np.ndarray],
-) -> np.ndarray:
-    images = list(pyr.data.flat)
-    target_shape = images[0].shape
-    resized = [resize(img, target_shape, interpolation=cv2.INTER_CUBIC) if img.shape != target_shape else img for img in images]
-    return fn(resized)
-
-def pyramid_collapse_max(pyr: Pyramid) -> np.ndarray:
-    return pyramid_collapse(pyr, lambda x: np.max(x, axis=0))
-
-def pyramid_collapse_mean(pyr: Pyramid) -> np.ndarray:
-    return pyramid_collapse(pyr, lambda x: np.mean(x, axis=0))
-
-
-
-"""
-- Pyramid Building
-------------------------------------------------------------------------------
-"""
-
-
 def gaussian_pyramid(
     image: np.ndarray,
     sigma: float,
@@ -242,19 +192,19 @@ def gaussian_pyramid(
     - Dimension 2 (scales): Different smoothing levels within each octave
 
     Args:
-        src: Input image (single channel, float32)
+        image: Input image (single channel, float32)
         sigma: Base sigma for Gaussian smoothing
+        n_scales: Number of scales in each octave
+        max_levels: Maximum number of levels in the pyramid
+        min_size: Minimum size of the pyramid levels
 
     Returns:
         2D object-type array with shape (n_octaves, n_scales)
 
     Note: sigmas = [sigma * (2.0 ** (s / n_scales)) for s in range(pyr.size)]
-      
     """
     # Calculate maximum number of octaves
-    shapes = pyramid_level_shapes(
-        image.shape, max_levels=max_levels, min_size=min_size
-    )
+    shapes = pyramid_level_shapes(image.shape, max_levels=max_levels, min_size=min_size)
 
     # Compute pyramid as in Lowe 2004
     pyr = np.zeros((len(shapes), n_scales + 1), dtype=object)
@@ -265,7 +215,7 @@ def gaussian_pyramid(
             if octave == 0 and scale == 0:
                 src = image
                 dst = gaussian_blur(src, sigma)
-                
+
             # First scale of other octaves: subsample additional scale of previous
             elif octave > 0 and scale == 0:
                 src = pyr[octave - 1, n_scales]
@@ -274,7 +224,7 @@ def gaussian_pyramid(
             # Intermediate scales: smooth previous scale
             else:
                 target_sigma = sigma * 2.0 ** (scale / n_scales)
-                previous_sigma = sigma * 2.0 ** ((scale - 1)/ n_scales)
+                previous_sigma = sigma * 2.0 ** ((scale - 1) / n_scales)
                 sig_diff = np.sqrt(target_sigma**2 - previous_sigma**2)
                 src = pyr[octave, scale - 1]
                 dst = gaussian_blur(src, sig_diff)
@@ -287,17 +237,15 @@ def gaussian_pyramid(
     return Pyramid(pyr)
 
 
-
 def center_surround_pyramids(
     image: np.ndarray,
     center_sigma: float,
     surround_sigma: float,
     n_scales: int,
     **kwargs,
-    ) -> tuple[Pyramid, Pyramid]:
-        
+) -> tuple[Pyramid, Pyramid]:
     center = gaussian_pyramid(image, sigma=center_sigma, n_scales=n_scales, **kwargs)
-    
+
     center = center if isinstance(center, Pyramid) else Pyramid(center)
     n_octaves, n_scales = center.data.shape
 
@@ -309,25 +257,27 @@ def center_surround_pyramids(
             scaled_sigma = adapted_sigma * (2.0 ** (scale / n_scales))
             center_img = center.data[level, scale]
             surround[level, scale] = gaussian_blur(center_img, scaled_sigma)
-    
+
     surround: Pyramid = Pyramid(surround)
 
     return center, surround
-
-
-"""
-- Laplacian Pyramids
--------------------------------------------------------------------------------
-"""
 
 
 def laplacian_pyramid(
     pyr: Pyramid,
     max_levels: int | None = None,
     min_size: int | None = None,
-):
-    """Build a multiscale Laplacian pyramid."""
+) -> Pyramid:
+    """Build a multiscale Laplacian pyramid.
 
+    Args:
+        pyr: The pyramid to build the Laplacian pyramid from.
+        max_levels: The maximum number of levels in the pyramid.
+        min_size: The minimum size of the pyramid levels.
+
+    Returns:
+        A new pyramid.
+    """
     gauss = pyr.data if isinstance(pyr, Pyramid) else pyr
     n_levels_in = gauss.shape[0]
     n_levels_out = n_levels_in - 1
@@ -349,12 +299,104 @@ def laplacian_pyramid(
 
     return Pyramid(lap)
 
+"""
+- Operations on Pyramids
+-------------------------------------------------------------------------------
+"""
+
+
+class PyramidCombine(Protocol):
+    def __call__(self, pyramids: Sequence[Pyramid]) -> Pyramid: ...
+
+
+class PyramidCollapse(Protocol):
+    def __call__(self, pyr: Pyramid) -> np.ndarray: ...
+
+
+def pyramid_combine(
+    pyramids: Sequence[Pyramid],
+    fn: Callable[[Sequence[np.ndarray]], np.ndarray],
+) -> np.ndarray:
+    """Combine multiple pyramids into a single pyramid.
+
+    Args:
+        pyramids: The pyramids to combine.
+        fn: The function to use to combine the pyramids.
+
+    Returns:
+        A new pyramid.
+
+    Raises:
+        ValueError: If no pyramids are provided.
+    """
+    n_pyramids = len(pyramids)
+    if n_pyramids == 0:
+        raise ValueError("No pyramids to combine")
+    if n_pyramids == 1:
+        return pyramids[0]
+
+    pyr_arrays = [pyr.data for pyr in pyramids]
+    pyr_shape = pyr_arrays[0].shape
+    assert all(pyr.shape == pyr_shape for pyr in pyr_arrays[1:])
+    pyr_size = pyr_arrays[0].size
+    planes = np.zeros(pyr_size, dtype=object)
+    for i, images in enumerate(zip(*[pyr.flat for pyr in pyramids])):
+        target_shape = images[0].shape
+        resized = []
+        for img in images:
+            if img.shape != target_shape:
+                resized.append(resize(img, target_shape))
+            else:
+                resized.append(img)
+        planes[i] = fn(resized)
+
+    return Pyramid(planes.reshape(pyr_shape))
+
+
+def pyramid_combine_max(pyramids: Sequence[Pyramid]) -> Pyramid:
+    return pyramid_combine(pyramids, lambda x: np.max(x, axis=0))
+
+
+def pyramid_combine_mean(pyramids: Sequence[Pyramid]) -> Pyramid:
+    return pyramid_combine(pyramids, lambda x: np.mean(x, axis=0))
+
+
+def pyramid_collapse(
+    pyr: Pyramid,
+    fn: Callable[[Sequence[np.ndarray]], np.ndarray],
+) -> np.ndarray:
+    """Collapse a pyramid into a single image.
+
+    Args:
+        pyr: The pyramid to collapse.
+        fn: The function to use to collapse the pyramid.
+
+    Returns:
+        A new image.
+
+    """
+    images = list(pyr.data.flat)
+    target_shape = images[0].shape
+    resized = []
+    for img in images:
+        if img.shape != target_shape:
+            resized.append(resize(img, target_shape, interpolation=cv2.INTER_CUBIC))
+        else:
+            resized.append(img)
+    return fn(resized)
+
+
+def pyramid_collapse_max(pyr: Pyramid) -> np.ndarray:
+    return pyramid_collapse(pyr, lambda x: np.max(x, axis=0))
+
+
+def pyramid_collapse_mean(pyr: Pyramid) -> np.ndarray:
+    return pyramid_collapse(pyr, lambda x: np.mean(x, axis=0))
 
 
 """
-- Combining/Collapsing Feature Maps and Image Pyramids
+- Operations on Feature Maps
 """
-
 
 
 class MapCombine(Protocol):
@@ -364,8 +406,10 @@ class MapCombine(Protocol):
 def map_max(maps: dict[int | str, np.ndarray]) -> np.ndarray:
     np.max(list(maps.values()), axis=0)
 
+
 def map_sum(maps: dict[int | str, np.ndarray]) -> np.ndarray:
     return np.sum(list(maps.values()), axis=0)
+
 
 def map_weighted_sum(
     maps: dict[int | str, np.ndarray],
@@ -373,14 +417,16 @@ def map_weighted_sum(
 ) -> np.ndarray:
     return np.sum([weights[key] * img for key, img in maps.items()], axis=0)
 
+
 def map_mean(maps: dict[int | str, np.ndarray]) -> np.ndarray:
     return np.mean(list(maps.values()), axis=0)
+
 
 def _map_weighted_mean(
     maps: dict[int | str, np.ndarray],
     weights: dict[int | str, float],
 ) -> np.ndarray:
-    total_weight = sum([abs(weights[key]) for key in maps.keys()])
+    total_weight = sum(abs(weights[key]) for key in maps.keys())
     normed_weights = {key: weights[key] / total_weight for key in maps.keys()}
     return np.sum([normed_weights[key] * img for key, img in maps.items()], axis=0)
 
@@ -388,10 +434,9 @@ def _map_weighted_mean(
 class WeightedMean(MapCombine):
     def __init__(self, weights: dict[int | str, float]):
         self._weights = dict(weights)
+
     def __call__(self, maps: dict[int | str, np.ndarray]) -> np.ndarray:
         return _map_weighted_mean(maps, self._weights)
-
-
 
 
 @dataclass
@@ -400,7 +445,7 @@ class SalienceResult:
     components: dict[str, Any] = field(default_factory=dict)
 
 
-class OnOffSalience:
+class ColorSalience:
     def __init__(
         self,
         center_sigma: float,
@@ -411,7 +456,6 @@ class OnOffSalience:
         combine: PyramidCombine = pyramid_combine_mean,
         collapse: PyramidCollapse = pyramid_collapse_mean,
     ):
-    
         self._center_sigma = center_sigma
         self._surround_sigma = surround_sigma
         self._n_scales = n_scales
@@ -428,7 +472,6 @@ class OnOffSalience:
         return image.astype(np.float32)
 
     def __call__(self, image: np.ndarray) -> SalienceResult:
-        
         # Make sure float32.
         image = self._prepare_input(image)
 
@@ -458,7 +501,7 @@ class OnOffSalience:
                 "on": on,
                 "off": off,
                 "salience": salience_pyramid,
-            }
+            },
         )
 
 
@@ -470,30 +513,18 @@ class DepthSalience:
         n_scales: int,
         max_levels: int | None = None,
         min_size: int | None = None,
-        combine: PyramidCombine = pyramid_combine_mean,
         collapse: PyramidCollapse = pyramid_collapse_mean,
     ):
-
         self._center_sigma = center_sigma
         self._surround_sigma = surround_sigma
         self._n_scales = n_scales
         self._max_levels = max_levels
         self._min_size = min_size
-        self._combine = combine
         self._collapse = collapse
 
-    def _prepare_input(self, image: np.ndarray) -> np.ndarray:
-        image = -np.log(image)
-        if image.dtype == np.float32:
-            return image
-        if np.issubdtype(image.dtype, np.integer):
-            return image.astype(np.float32) / 255.0
-        return image.astype(np.float32)
-
     def __call__(self, image: np.ndarray) -> SalienceResult:
-
         # Make sure float32.
-        image = self._prepare_input(image)
+        image = -np.log(image).astype(np.float32)
 
         # Build center/surround and on/off pyramids.
         center, surround = center_surround_pyramids(
@@ -506,12 +537,7 @@ class DepthSalience:
         )
 
         diff: Pyramid = center - surround
-        on: Pyramid = diff.apply(lambda img: np.maximum(img, 0))
-        # off: Pyramid = diff.apply(lambda img: np.maximum(-img, 0))
-
-        # Combine on/off pyramids to get feature map (a pyramid)
-        # salience_pyramid = self._combine([on, off])
-        salience_pyramid = on
+        salience_pyramid = diff.apply(lambda img: np.maximum(img, 0))
         salience_map = self._collapse(salience_pyramid)
 
         return SalienceResult(
@@ -519,10 +545,9 @@ class DepthSalience:
             components={
                 "center": center,
                 "surround": surround,
-                "on": on,
-                # "off": off,
+                "on": salience_pyramid,  # TODO: remove.
                 "salience": salience_pyramid,
-            }
+            },
         )
 
 
@@ -535,9 +560,9 @@ class OrientationSalience:
         gamma: float = 0.75,
         n_orientations: int = 4,
         combine: MapCombine = map_mean,
-        collapse: PyramidCollapse = pyramid_collapse_mean
+        collapse: PyramidCollapse = pyramid_collapse_mean,
     ):
-        """Builds orientation salience model.
+        """Computes orientation salience.
 
         Args:
             period: wavelength. Good default is center_sigma * 2
@@ -564,8 +589,33 @@ class OrientationSalience:
             n_orientations=self._n_orientations,
         )
 
-    def __call__(self, pyr: Pyramid) -> SalienceResult:
+    @staticmethod
+    def make_kernels(
+        period: float,
+        sigma: float,
+        phase: float = np.pi / 2,
+        gamma: float = 0.75,
+        n_orientations: int = 4,
+    ) -> dict[str, np.ndarray]:
+        kernels = {}
+        filter_size = int(7 * sigma + 1) | 1
+        for ori in range(n_orientations):
+            theta = ori * np.pi / n_orientations
+            kernel = cv2.getGaborKernel(
+                (filter_size, filter_size),
+                sigma=sigma,
+                theta=theta,
+                lambd=period,
+                gamma=gamma,
+                psi=phase,
+                ktype=cv2.CV_32F,
+            )
+            kernel = kernel - np.mean(kernel)  # balance excitation and suppression
+            kernels[f"orientation_{ori}"] = kernel
 
+        return kernels
+
+    def __call__(self, pyr: Pyramid) -> SalienceResult:
         pyramids = {}
         feature_maps = {}
         lap = laplacian_pyramid(pyr)
@@ -574,9 +624,7 @@ class OrientationSalience:
             p = np.zeros(lap.shape, dtype=object)
             for level in range(lap.shape[0]):
                 for scale in range(lap.shape[1]):
-                    amt = cv2.filter2D(
-                        lap.data[level, scale], cv2.CV_32F, kernel
-                    )
+                    amt = cv2.filter2D(lap.data[level, scale], cv2.CV_32F, kernel)
                     p[level, scale] = np.abs(amt)
             pyramids[ori] = Pyramid(p)
             if self._collapse:
@@ -593,49 +641,19 @@ class OrientationSalience:
             },
         )
 
-    @staticmethod
-    def make_kernels(
-        period: float,
-        sigma: float,
-        phase: float = np.pi / 2,
-        gamma: float = 0.75,
-        n_orientations: int = 4,
-        ) -> dict[str, np.ndarray]:
-
-        kernels = {}
-        filter_size = int(7 * sigma + 1) | 1
-        for ori in range(n_orientations):
-            theta = ori * np.pi / n_orientations
-            kernel = cv2.getGaborKernel(
-                (filter_size, filter_size),
-                sigma=sigma,
-                theta=theta,
-                lambd=period,
-                gamma=gamma,
-                psi=phase,
-                ktype=cv2.CV_32F,
-            )
-            # kernel = kernel / np.sum(np.abs(kernel))
-            kernel = kernel - np.mean(kernel)  # balance excitation and suppression
-            kernels[f"orientation_{ori}"] = kernel
-
-        return kernels
-
 
 class Sal9000:
-
     def __init__(
         self,
         color_space: ColorSpace = ColorSpace.OPPONENT,
-        color: OnOffSalience | None = None,
+        color: ColorSalience | None = None,
         depth: DepthSalience | None = None,
         orientation: OrientationSalience | None = None,
         combine: MapCombine | None = None,
     ):
-
         self._color_space = color_space
         if color is None:
-            self._color = OnOffSalience(
+            self._color = ColorSalience(
                 center_sigma=3.0,
                 surround_sigma=5.0,
                 n_scales=2,
@@ -682,14 +700,16 @@ class Sal9000:
     def __call__(self, rgba: np.ndarray, depth: np.ndarray | None = None) -> np.ndarray:
         return self.process(rgba, depth).salience_map
 
-    def process(self, rgba: np.ndarray, depth: np.ndarray | None = None) -> SalienceResult:
-        Lab, depth = self._prepare_input(rgba, depth)
+    def process(
+        self, rgba: np.ndarray, depth: np.ndarray | None = None
+    ) -> SalienceResult:
+        Lab, depth = self._prepare_input(rgba, depth)  # noqa: N806
 
         components: dict[str, Any] = {}
         feature_maps: dict[str, np.ndarray] = {}
 
         if self._color:
-            L, a, b = cv2.split(Lab)
+            L, a, b = cv2.split(Lab)  # noqa: N806
             for channel, plane in zip(("L", "a", "b"), (L, a, b)):
                 channel_result = self._color(plane)
                 components[channel] = channel_result
@@ -727,8 +747,6 @@ class Sal9000:
         rgba: np.ndarray,
         depth: np.ndarray | None,
     ) -> tuple[np.ndarray, np.ndarray | None]:
-
-        # Get into uint8 0-255 to ensure correct colorspace conversion.
         if rgba.dtype == np.uint8:
             pass
         elif np.issubdtype(rgba.dtype, np.integer):
@@ -739,11 +757,11 @@ class Sal9000:
 
         # Put into desired color space.
         if self._color_space == ColorSpace.LAB:
-            Lab = rgb_to_lab(rgb)
+            Lab = rgb_to_lab(rgb)  # noqa: N806
         elif self._color_space == ColorSpace.OPPONENT:
-            Lab = rgb_to_opponent(rgb)
+            Lab = rgb_to_opponent(rgb)  # noqa: N806
         elif self._color_space == ColorSpace.OPPONENT_CODI:
-            Lab = rgb_to_opponent_codi(rgb)
+            Lab = rgb_to_opponent_codi(rgb)  # noqa: N806
         else:
             raise ValueError(f"Unsupported color space: {self._color_space}")
 
@@ -751,6 +769,3 @@ class Sal9000:
             depth = depth.astype(np.float32)
 
         return Lab, depth
-
-
-
