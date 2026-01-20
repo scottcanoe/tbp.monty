@@ -6,9 +6,7 @@ defaults:
 
 config:
   
-  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_sal_depth_and_color/pretrained/
+  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral/pretrained/
   logging:
-    run_name: sal_depth_and_color
+    run_name: sal
   
-  eval_env_interface_args:
-    object_names: ${project.objects.all}

@@ -1,6 +1,6 @@
 defaults:
   - /experiment/salience/walk_obj_distinct_on_spiral_step_3_obj_distinct@_here_
-  - /experiment/salience/logging/eval_debug@config.logging
+  - /experiment/salience/logging/debug@config.logging
   - _self_
 
 config:
@@ -16,12 +16,7 @@ config:
   
   logging:
     run_name: compositional_snapshots
-    
-    detailed_filters:
-      - _target_: tbp.monty.frameworks.loggers.monty_handlers.IncludeExcludeFilter
-        exclude:
-          - "LM_0"
-  
+      
   monty_config:
     sensor_module_configs:
       sensor_module_0:

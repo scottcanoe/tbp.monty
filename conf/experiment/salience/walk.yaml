@@ -6,9 +6,7 @@ defaults:
 
 config:
   
-  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral_step_3_obj_all/pretrained/
+  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral/pretrained/
   logging:
-    run_name: walk_obj_all_on_spiral_step_3_obj_all
+    run_name: walk
   
-  eval_env_interface_args:
-    object_names: ${project.objects.all}

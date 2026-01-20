@@ -1,9 +1,0 @@
-defaults:
-  - /experiment/salience/walk_obj_distinct_on_spiral_step_3_obj_distinct@_here_
-  - /experiment/salience/learning_modules/evidence_with_gsg@config.monty_config.learning_module_configs.learning_module_0
-  - _self_
-
-config:
-  logging:
-    run_name: walkgsg_obj_distinct_on_spiral_step_3_obj_distinct
-  

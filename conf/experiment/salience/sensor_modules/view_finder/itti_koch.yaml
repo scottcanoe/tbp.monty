@@ -1,9 +1,0 @@
-sensor_module_class: ${monty.class:tbp.monty.frameworks.models.salience.sensor_module.HabitatSalienceSM}
-sensor_module_args:
-    sensor_module_id: view_finder
-    save_raw_obs: false
-    
-    salience_strategy_class: ${monty.class:tbp.monty.frameworks.models.salience.itti_koch_salience.IttiKochSalienceStrategy}
-    salience_strategy_args:
-        pyramid_levels: 9
-        upsample_size: 1024

@@ -6,7 +6,7 @@ defaults:
 
 config:
   logging:
-    run_name: pretrain_sal_obj_distinct
+    run_name: pretrain_sal
 
   monty_config:
     learning_module_configs:
@@ -16,5 +16,3 @@ config:
             patch:
               distance: 0.003
 
-  train_env_interface_args:
-    object_names: ${project.objects.distinct}

@@ -1,0 +1,11 @@
+defaults:
+  - /experiment/salience/eval@_here_
+  - /experiment/salience/sensor_modules/view_finder/probe@config.monty_config.sensor_module_configs.sensor_module_1
+  - /experiment/salience/learning_modules/evidence_with_gsg@config.monty_config.learning_module_configs.learning_module_0
+  - _self_
+
+config:
+  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral/pretrained/
+  logging:
+    run_name: walkgsg
+  

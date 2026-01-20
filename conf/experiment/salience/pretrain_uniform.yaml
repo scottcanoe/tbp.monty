@@ -1,12 +1,12 @@
 defaults:
   - /experiment/salience/pretrain@_here_
-  - /experiment/salience/sensor_modules/view_finder/sal@config.monty_config.sensor_module_configs.sensor_module_1
+  - /experiment/salience/sensor_modules/view_finder/uniform@config.monty_config.sensor_module_configs.sensor_module_1
   - /experiment/salience/motor_system/lookat@config.monty_config.motor_system_config
   - _self_
 
 config:
   logging:
-    run_name: pretrain_sal_obj_all
+    run_name: pretrain_uniform
 
   monty_config:
     learning_module_configs:
@@ -15,4 +15,3 @@ config:
           graph_delta_thresholds:
             patch:
               distance: 0.003
-

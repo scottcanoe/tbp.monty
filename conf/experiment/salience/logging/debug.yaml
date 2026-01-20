@@ -14,3 +14,8 @@ monty_handlers:
 wandb_handlers: []
 
 detailed_save_per_episode: true
+
+detailed_filters:
+  - _target_: tbp.monty.frameworks.loggers.monty_handlers.IncludeExcludeFilter
+    exclude:
+      - "LM_0"

@@ -1,0 +1,12 @@
+defaults:
+  - /experiment/salience/logging/debug@_here_
+  - _self_
+
+detailed_filters:
+  - _target_: tbp.monty.frameworks.loggers.monty_handlers.IncludeExcludeFilter
+    exclude:
+      - "LM_0"
+
+  - _target_: tbp.monty.frameworks.loggers.monty_handlers.RawObservationsFilter
+    include:
+      - "goals"

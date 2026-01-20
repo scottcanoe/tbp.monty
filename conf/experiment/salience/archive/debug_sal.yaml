@@ -2,7 +2,7 @@ defaults:
   - /experiment/salience/eval@_here_
   - /experiment/salience/sensor_modules/view_finder/sal@config.monty_config.sensor_module_configs.sensor_module_1
   - /experiment/salience/motor_system/lookat@config.monty_config.motor_system_config
-  - /experiment/salience/logging/eval_debug@config.logging
+  - /experiment/salience/logging/debug@config.logging
   - _self_
 
 config:
@@ -11,15 +11,7 @@ config:
   model_name_or_path: ${project.paths.pretrain_dir}/pretrain_sal_tau_4/pretrained/
   logging:
     run_name: debug_sal
-    detailed_filters:
-        - _target_: tbp.monty.frameworks.loggers.monty_handlers.IncludeExcludeFilter
-          exclude:
-            - "LM_0"
 
-            
-        # - _target_: tbp.monty.frameworks.loggers.monty_handlers.RawObservationsFilter
-        #   include:
-        #     - "goals"
   monty_config:
     sensor_module_configs:
       sensor_module_0:
