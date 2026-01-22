@@ -1,5 +1,5 @@
 defaults:
-  - /experiment/salience/walk_obj_distinct_on_spiral_step_3_obj_distinct@_here_
+  - /experiment/salience/walk@_here_
   - /experiment/salience/logging/debug@config.logging
   - _self_
 
@@ -27,7 +27,6 @@ config:
           save_raw_obs: true
   
   eval_env_interface_args:
-    # object_names: ${project.objects.all}
     object_names:
       - 002_cube_tbp_horz
       - 004_cube_numenta_horz

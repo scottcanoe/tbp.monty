@@ -1,5 +1,5 @@
 defaults:
-  - /experiment/salience/walk_obj_distinct_on_spiral_step_3_obj_distinct@_here_
+  - /experiment/salience/walk@_here_
   - /experiment/salience/logging/debug@config.logging
   - _self_
 
@@ -7,10 +7,10 @@ config:
   
   max_total_steps: 1
   max_eval_steps: 1
-  n_eval_epochs: 14
-  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral_step_3_obj_distinct/pretrained/
+  n_eval_epochs: 1
+  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral/pretrained/
   logging:
-    run_name: power_drill
+    run_name: snapshots
   
   monty_config:
     sensor_module_configs:
@@ -22,9 +22,7 @@ config:
           save_raw_obs: true
   
   eval_env_interface_args:
-    
-    object_names:
-      - power_drill
-  
+    object_names: ${project.objects.all}
     object_init_sampler:
-      rotations: ${project.rotations.train_14}
+      rotations:
+        - [0, 0, 0]

@@ -6,7 +6,6 @@ detailed_filters:
   - _target_: tbp.monty.frameworks.loggers.monty_handlers.IncludeExcludeFilter
     exclude:
       - "LM_0"
-
   - _target_: tbp.monty.frameworks.loggers.monty_handlers.RawObservationsFilter
     include:
       - "goals"
