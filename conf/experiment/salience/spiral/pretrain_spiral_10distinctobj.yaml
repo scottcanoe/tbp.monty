@@ -5,12 +5,6 @@ defaults:
 config:
   logging:
     run_name: pretrain_spiral_10distinctobj
-      
-  monty_config:
-    motor_system_config:
-      motor_system_args:
-        policy_args:
-          fixed_amount: 3
 
   train_env_interface_args:
     object_names: ${project.objects.distinct}

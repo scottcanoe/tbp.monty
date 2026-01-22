@@ -1,0 +1,11 @@
+defaults:
+  - /experiment/salience/bio/pretrain_bio@_here_
+  - /experiment/salience/env_interface/res_128@config.env_interface_config
+  - _self_
+
+config:
+  logging:
+    run_name: pretrain_bio_reproduce
+
+  train_env_interface_args:
+    object_names: ${project.objects.distinct}

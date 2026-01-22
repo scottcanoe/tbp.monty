@@ -1,5 +1,6 @@
 defaults:
   - /experiment/salience/uniform/pretrain_uniform@_here_
+  - /experiment/salience/env_interface/res_128@config.env_interface_config
   - _self_
 
 config:
