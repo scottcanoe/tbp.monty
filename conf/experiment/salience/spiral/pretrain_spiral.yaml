@@ -7,9 +7,4 @@ defaults:
 config:
   logging:
     run_name: pretrain_spiral
-      
-  monty_config:
-    motor_system_config:
-      motor_system_args:
-        policy_args:
-          fixed_amount: 3
+  

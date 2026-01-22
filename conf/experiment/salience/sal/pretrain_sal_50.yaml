@@ -1,0 +1,14 @@
+defaults:
+  - /experiment/salience/sal/pretrain_sal@_here_
+  - _self_
+
+config:
+  max_train_steps: 50
+  max_total_steps: 50
+  logging:
+    run_name: pretrain_sal_50
+
+  monty_config:
+    monty_args:
+      num_exploratory_steps: 50
+      max_total_steps: 50
