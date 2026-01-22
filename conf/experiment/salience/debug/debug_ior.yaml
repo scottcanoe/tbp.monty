@@ -1,8 +1,9 @@
 defaults:
   - /experiment/salience/eval@_here_
-  - /experiment/salience/sensor_modules/view_finder/uniform@config.monty_config.sensor_module_configs.sensor_module_1
+  - /experiment/salience/sensor_modules/view_finder/bio@config.monty_config.sensor_module_configs.sensor_module_1
   - /experiment/salience/motor_system/lookat@config.monty_config.motor_system_config
   - /experiment/salience/logging/debug_goals@config.logging
+  - /experiment/salience/env_interface/res_128@config.env_interface_config
   - _self_
 
 config:
@@ -17,7 +18,7 @@ config:
       sensor_module_0:
         sensor_module_args:
           save_raw_obs: false
-          noise_params: null
+          # noise_params: null
       sensor_module_1:
         sensor_module_args:
           save_raw_obs: true
