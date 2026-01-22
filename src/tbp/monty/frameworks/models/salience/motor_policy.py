@@ -137,13 +137,13 @@ class LookAtPolicy(InformedPolicy):
         # Collect necessary agent and sensor pose information.
         agent_dict = state[self.agent_id]
         agent_pos_rel_world = agent_dict["position"]
-        agent_rot_rel_world = as_scipy_rotation(agent_dict["rotation"])
+        agent_rot_rel_world = agent_dict["rotation"]
 
         sensor_dict = agent_dict["sensors"][self.sensor_module_id]
-        sensor_rot_rel_agent = as_scipy_rotation(sensor_dict["rotation"])
+        sensor_rot_rel_agent = sensor_dict["rotation"]
 
         # Get the target location in world and agent coordinates.
-        target_rel_world = np.asarray(self.driving_goal_state.location)
+        target_rel_world = np.array(self.driving_goal_state.location)
         target_rel_agent = agent_rot_rel_world.inv().apply(
             target_rel_world - agent_pos_rel_world
         )
@@ -178,53 +178,6 @@ class LookAtPolicy(InformedPolicy):
         return actions
 
 
-def as_scipy_rotation(
-    obj: Rotation | quaternion.quaternion | ArrayLike,
-    *,
-    scalar_first: bool = True,
-    axes: str = "xyz",
-    degrees: bool = True,
-) -> Rotation:
-    """Convert a rotation description to a rotation matrix.
-
-    Args:
-        obj: The rotation to convert.
-        scalar_first: Whether to use scalar-first order. Only used if a 4-element
-            sequence is given.
-        axes: The axes to use for euler angles. Only used if a 3-element sequence is
-            given.
-        degrees: Whether to use degrees. Only used if a 3-element sequence is given.
-
-    Returns:
-        A scipy.spatial.transform.Rotation instance.
-
-    Raises:
-        ValueError: If the argument is array-like but doesn't have the right shape.
-    """
-    if isinstance(obj, Rotation):
-        return obj
-
-    if isinstance(obj, quaternion.quaternion):
-        return Rotation.from_quat([obj.x, obj.y, obj.z, obj.w])
-
-    obj = np.asarray(obj)
-
-    # - euler angles
-    if obj.shape == (3,):
-        return Rotation.from_euler(axes, obj, degrees=degrees)
-
-    # - quaternion
-    if obj.shape == (4,):
-        if scalar_first:
-            return Rotation.from_quat(np.roll(obj, -1))
-        return Rotation.from_quat(obj)
-
-    # - 3x3 rotation matrix
-    if obj.shape == (3, 3):
-        return Rotation.from_matrix(axes, obj, degrees=degrees)
-
-    raise ValueError(f"Invalid rotation description: {obj}")
-
 
 def clean_habitat_motor_system_state(raw_state: dict) -> MotorSystemState:
     """Clean up a Habitat motor system state dictionaries.
@@ -252,7 +205,7 @@ def clean_habitat_motor_system_state(raw_state: dict) -> MotorSystemState:
         agent_state = AgentState(
             {
                 "position": np.array([pos.x, pos.y, pos.z]),
-                "rotation": rot,
+                "rotation": Rotation.from_quat([rot.x, rot.y, rot.z, rot.w]),
                 "sensors": {},
             }
         )
@@ -264,7 +217,7 @@ def clean_habitat_motor_system_state(raw_state: dict) -> MotorSystemState:
             rot = raw_sensor_state["rotation"]
             agent_state["sensors"][sensor_id] = SensorState(
                 position=np.array([pos.x, pos.y, pos.z]),
-                rotation=rot,
+                rotation=Rotation.from_quat([rot.x, rot.y, rot.z, rot.w]),
             )
         state[agent_id] = agent_state
 
