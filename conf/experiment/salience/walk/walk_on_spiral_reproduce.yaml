@@ -1,0 +1,19 @@
+defaults:
+  - /experiment/salience/walk/walk@_here_
+  - _self_
+
+config:
+  
+  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral_reproduce/pretrained/
+  logging:
+    run_name: walk_on_spiral_reproduce
+  
+  monty_config:
+    motor_system_config:
+      motor_system_args:
+        policy_args:
+          action_sampler_args:
+            rotation_degrees: 5
+
+  eval_env_interface_args:
+    object_names: ${project.objects.distinct}

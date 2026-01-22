@@ -1,0 +1,10 @@
+defaults:
+  - /experiment/salience/uniform/pretrain_uniform@_here_
+  - _self_
+
+config:
+  logging:
+    run_name: pretrain_uniform_reproduce
+
+  train_env_interface_args:
+    object_names: ${project.objects.distinct}

@@ -1,0 +1,12 @@
+defaults:
+  - /experiment/salience/uniform/uniform@_here_
+  - _self_
+
+config:
+  
+  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral_10distinctobj/pretrained/
+  logging:
+    run_name: uniform_10distinctobj_on_spiral_10distinctobj
+  
+  eval_env_interface_args:
+    object_names: ${project.objects.distinct}
