@@ -1,0 +1,38 @@
+defaults:
+  - /experiment/salience/eval@_here_
+  - /experiment/salience/sensor_modules/view_finder/dummy_sm@config.monty_config.sensor_module_configs.sensor_module_1
+  - /experiment/salience/motor_system/lookat@config.monty_config.motor_system_config
+  - /experiment/salience/logging/debug@config.logging
+  - _self_
+
+config:
+  
+  max_total_steps: 17
+  max_eval_steps: 17
+  n_eval_epochs: 1
+  model_name_or_path: ${project.paths.pretrain_dir}/pretrain_spiral/pretrained/
+  
+  env_interface_config:
+    env_init_args:
+      data_path: ${path.expanduser:${oc.env:MONTY_DATA}/targets}
+  
+  logging:
+    run_name: planar_grid
+      
+  monty_config:
+    sensor_module_configs:
+      sensor_module_0:
+        sensor_module_args:
+          save_raw_obs: true
+          noise_params: null
+      sensor_module_1:
+        sensor_module_args:
+          save_raw_obs: true
+  
+  eval_env_interface_args:
+    object_names:
+      - 002_planar_grid
+    
+    object_init_sampler:
+      rotations:
+        - [0, 0, 0]

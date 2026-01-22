@@ -135,20 +135,18 @@ class LookAtPolicy(InformedPolicy):
         state = clean_habitat_motor_system_state(state)
 
         # Collect necessary agent and sensor pose information.
-        # Subscripts: w=world, a=agent, s=sensor.
         agent_dict = state[self.agent_id]
         agent_pos_rel_world = agent_dict["position"]
         agent_rot_rel_world = as_scipy_rotation(agent_dict["rotation"])
-        agent_to_world = RigidTransform.from_components(
-            agent_pos_rel_world, agent_rot_rel_world
-        )
 
         sensor_dict = agent_dict["sensors"][self.sensor_module_id]
         sensor_rot_rel_agent = as_scipy_rotation(sensor_dict["rotation"])
 
         # Get the target location in world and agent coordinates.
         target_rel_world = np.asarray(self.driving_goal_state.location)
-        target_rel_agent = agent_to_world.inv()(target_rel_world)
+        target_rel_agent = agent_rot_rel_world.inv().apply(
+            target_rel_world - agent_pos_rel_world
+        )
 
         # Compute the target's azimuth, relative to the agent. This value is used to
         # compute the yaw action to be performed by the agent.
@@ -163,26 +161,13 @@ class LookAtPolicy(InformedPolicy):
         )
         sensor_pitch_rel_agent = sensor_rot_rel_agent.as_euler("xyz")[0]
         sensor_pitch = target_pitch_rel_agent - sensor_pitch_rel_agent
-        # For some reason, the above is more stable and accurate than the below:
-        # sensor_to_agent = RigidTransform.from_components(
-        #     sensor_dict["position"], sensor_rot_rel_agent
-        # )
-        # t_s = sensor_to_agent.inv()(target_rel_agent)
-        # _, py, sensor_pitch2 = cartesian_to_spherical(t_s)
 
         # Create actions to return to the the motor system.
-        yaw_degrees = np.degrees(agent_yaw)
         agent_id = AgentID(self.agent_id)
-        if yaw_degrees >= 0:
-            turn = TurnLeft(agent_id=agent_id, rotation_degrees=yaw_degrees)
-        else:
-            turn = TurnRight(agent_id=agent_id, rotation_degrees=-yaw_degrees)
-
-        pitch_degrees = np.degrees(sensor_pitch)
-        if pitch_degrees >= 0:
-            look = LookUp(agent_id=agent_id, rotation_degrees=pitch_degrees)
-        else:
-            look = LookDown(agent_id=agent_id, rotation_degrees=-pitch_degrees)
+        actions = [
+            TurnLeft(agent_id=agent_id, rotation_degrees=np.degrees(agent_yaw)),
+            LookUp(agent_id=agent_id, rotation_degrees=np.degrees(sensor_pitch)),
+        ]
 
         # For logging purposes only.
         self.driving_goal_state.info["attempted"] = True
@@ -190,7 +175,7 @@ class LookAtPolicy(InformedPolicy):
         # Drop the reference to the goal state.
         self.driving_goal_state = None
 
-        return [turn, look]
+        return actions
 
 
 def as_scipy_rotation(
@@ -286,93 +271,3 @@ def clean_habitat_motor_system_state(raw_state: dict) -> MotorSystemState:
     return state
 
 
-class RigidTransform:
-    """A rigid transform (rotation + translation)."""
-
-    def __init__(
-        self,
-        translation: ArrayLike,
-        rotation: Rotation | quaternion.quaternion | ArrayLike,
-    ):
-        # cached homogeneous transformation matrix
-        self._matrix = None
-
-        # basic
-        self.translation = translation
-        self.rotation = rotation
-
-    @classmethod
-    def from_components(
-        cls,
-        translation: ArrayLike,
-        rotation: quaternion.quaternion | ArrayLike | Rotation,
-    ) -> RigidTransform:
-        """Implemented for compatibiility with future scipy release.
-
-        Args:
-            translation: The translation component.
-            rotation: The rotation component.
-
-        Returns:
-            A RigidTransform instance.
-
-        Note: this is a convenience method for creating a RigidTransform instance
-        from its components. It is not necessary to use this method.
-        """
-        return cls(translation, rotation)
-
-    @property
-    def translation(self) -> np.ndarray:
-        return self._translation.copy()
-
-    @translation.setter
-    def translation(self, translation: ArrayLike) -> None:
-        vec = np.array(translation)
-        if vec.shape != (3,):
-            raise ValueError(f"Translation must be a 3-element array, got {vec.shape}")
-        self._translation = vec
-        self._matrix = None
-
-    @property
-    def rotation(self) -> Rotation:
-        return self._rotation
-
-    @rotation.setter
-    def rotation(self, rotation: Rotation | quaternion.quaternion | ArrayLike) -> None:
-        self._rotation = as_scipy_rotation(rotation)
-        self._matrix = None
-
-    def as_matrix(self) -> np.ndarray:
-        """4x4 homogeneous transformation matrix."""
-        return self._cached_matrix().copy()
-
-    def apply(self, point: ArrayLike) -> np.ndarray:
-        return self(point)
-
-    def inv(self) -> RigidTransform:
-        rotation_inv = self.rotation.inv()
-        translation_inv = rotation_inv.apply(-self._translation)
-        return RigidTransform(translation_inv, rotation_inv)
-
-    def _cached_matrix(self) -> np.ndarray:
-        """Returns a a homogeneous transformation matrix, possibly cached."""
-        if self._matrix is None:
-            matrix = np.eye(4)
-            matrix[:3, :3] = self._rotation.as_matrix()
-            matrix[:3, 3] = self._translation
-            self._matrix = matrix
-        return self._matrix
-
-    def __call__(self, point: ArrayLike) -> np.ndarray:
-        point = np.asarray(point)
-        if point.ndim == 1:
-            return self._rotation.apply(point) + self._translation
-        else:
-            matrix = self._cached_matrix()
-            return (matrix[:3, :3] @ point.T).T + self._translation
-
-    def __repr__(self) -> str:
-        return (
-            f"RigidTransform(translation={self._translation}, "
-            f"rotation={self._rotation})"
-        )
