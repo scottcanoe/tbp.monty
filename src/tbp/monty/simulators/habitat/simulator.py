@@ -613,14 +613,14 @@ class HabitatSim(HabitatActuator, Simulator):
                     continue
                 rotation = sim_utils.quat_from_magnum(sensor.node.rotation)
                 sensors[monty_id] = SensorState(
-                    position=sensor.node.translation,
+                    position=np.array(sensor.node.translation),
                     rotation=rotation,
                 )
 
             # Update agent/module state
             rotation = sim_utils.quat_from_magnum(agent_node.rotation)
             result[agent.agent_id] = AgentState(
-                position=agent_node.translation,
+                position=np.array(agent_node.translation),
                 rotation=rotation,
                 sensors=sensors,
             )
