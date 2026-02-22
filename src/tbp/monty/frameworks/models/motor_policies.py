@@ -418,6 +418,7 @@ class InformedPolicy(BasePolicy):
         # Goal-directed jump state tracking.
         self._driving_goal_state: GoalState | None = None
         self._jump_to: JumpTo | None = None
+        self._last_regular_action: Action | None = None
 
     @property
     def processed_observations(self) -> State | None:
@@ -438,6 +439,7 @@ class InformedPolicy(BasePolicy):
         self._processed_observations = None
         self._jump_to = None
         self._driving_goal_state = None
+        self._last_regular_action = None
         return super().pre_episode()
 
     ###
@@ -490,13 +492,22 @@ class InformedPolicy(BasePolicy):
             self.handle_successful_jump()
 
         if self.processed_observations.get_on_object():
-            return super().dynamic_call(ctx, observations, state)
+            self._result = MotorPolicyResult(
+                actions=[self.action_sampler.sample(self.agent_id, ctx.rng)],
+                status=PolicyStatus.READY,
+            )
+            self._last_regular_action = self._result.actions[0]
+            return self._result
 
-        return MotorPolicyResult(
-            actions=[self.fixme_undo_last_action()],
+        undo_action = self.fixme_undo_last_action()
+
+        self._result = MotorPolicyResult(
+            actions=[undo_action],
             status=PolicyStatus.BUSY,
             motor_only_step=False,
         )
+        self._last_regular_action = undo_action
+        return self._result
 
     def fixme_undo_last_action(
         self,
@@ -535,11 +546,12 @@ class InformedPolicy(BasePolicy):
         An Action.undo of some sort would be a better solution, however it is not
         yet clear to me what to do for actions that do not support undo.
         """
-        if self.actions:
-            assert len(self.actions) == 1, "Expected one action"
-            last_action = self.actions[0]
-        else:
-            return None
+        # if self.actions:
+        #     assert len(self.actions) == 1, "Expected one action"
+        #     last_action = self.actions[0]
+        # else:
+        #     return None
+        last_action = self._last_regular_action
 
         if isinstance(last_action, LookDown):
             return LookDown(
@@ -976,7 +988,7 @@ class SurfacePolicy(InformedPolicy):
             self.last_surface_policy_action = self.actions[0]
 
         next_action = self.get_next_action(ctx, state)
-        assert next_action is not None, "Expected next action"
+        assert next_action is not None, "Expected one action"
         return MotorPolicyResult(
             actions=[next_action],
             status=PolicyStatus.BUSY,
