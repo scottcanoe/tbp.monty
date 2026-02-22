@@ -50,6 +50,7 @@ from tbp.monty.frameworks.models.evidence_matching.learning_module import (
 from tbp.monty.frameworks.models.goal_state_generation import (
     EvidenceGoalStateGenerator,
 )
+from tbp.monty.frameworks.models.motor_policies import JumpTo
 from tbp.monty.frameworks.models.motor_system_state import (
     AgentState,
     ProprioceptiveState,
@@ -938,8 +939,7 @@ class PolicyTest(unittest.TestCase):
         # --- Determine Habitat-coordinates from goal-state ---
 
         motor_system._policy.set_driving_goal_state(motor_goal_state)
-
-        target_loc_hab, target_quat = motor_system._policy.derive_habitat_goal_state()
+        target_loc_hab, target_quat = JumpTo.derive_habitat_goal_state(motor_goal_state)
 
         resulting_rot = Rotation.from_quat(
             numpy_to_scipy_quat(np.array([target_quat.real] + list(target_quat.imag)))
