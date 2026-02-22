@@ -909,6 +909,8 @@ class SurfacePolicy(InformedPolicy):
         Raises:
             ObjectNotVisible: If the object is not visible.
         """
+        self._is_jump_action = False
+
         if self.driving_goal_state and self.use_goal_state_driven_actions:
             self._jump_to = JumpTo(
                 agent_id=self.agent_id,
@@ -917,6 +919,7 @@ class SurfacePolicy(InformedPolicy):
             )
             self._result = self._jump_to(ctx, observations, state)
             self._driving_goal_state = None
+            self._is_jump_action = True
             return self._result
 
         if self._jump_to:
@@ -930,10 +933,10 @@ class SurfacePolicy(InformedPolicy):
                     undo=None,
                 )
                 self.handle_failed_jump()  # logging, etc.
+                self._is_jump_action = True
                 return self._result
 
             self.handle_successful_jump()
-            # reset cycle of actions.
 
         # Check if we have poor visualization of the object
         if (
@@ -973,9 +976,9 @@ class SurfacePolicy(InformedPolicy):
             self.last_surface_policy_action = self.actions[0]
 
         next_action = self.get_next_action(ctx, state)
-        actions = [] if next_action is None else [next_action]
+        assert next_action is not None, "Expected next action"
         return MotorPolicyResult(
-            actions=actions,
+            actions=[next_action],
             status=PolicyStatus.BUSY,
         )
 
@@ -1011,8 +1014,9 @@ class SurfacePolicy(InformedPolicy):
 
         super().post_actions(actions)
         if actions:
-            assert len(actions) == 1, "Expected one action"
-            self.last_surface_policy_action = actions[0]
+            if not self._is_jump_action:
+                assert len(actions) == 1, "Expected one action: " + str(actions)
+                self.last_surface_policy_action = actions[0]
         else:
             self.last_surface_policy_action = None
 
@@ -1141,7 +1145,8 @@ class SurfacePolicy(InformedPolicy):
             # move to the desired_object_distance if it is in view
             return self._move_forward()
 
-        return None
+        assert False, "Expected last action to be one of the above"
+        # return None
 
     def tangential_direction(
         self, ctx: RuntimeContext, state: MotorSystemState
@@ -1289,7 +1294,7 @@ class SurfacePolicy(InformedPolicy):
         # Reset the action cycle.
         self.actions = [
             MoveTangentially(
-                agent_id=self._agent_id,
+                agent_id=self.agent_id,
                 distance=0.0,
                 direction=(0, 0, 0),
             )
@@ -1467,25 +1472,19 @@ class SurfacePolicyCurvatureInformed(SurfacePolicy):
         if percept is None:
             return
 
-        if self.actions:
-            assert len(self.actions) == 1, "Expected one action"
-            last_action = self.actions[0]
-        else:
+        if not (
+            self.last_surface_policy_action
+            and self.last_surface_policy_action.name == "orient_vertical"
+        ):
             return
 
-        if last_action.name == "orient_vertical":
-            # Only append locations associated with performing a tangential
-            # action, rather than some form of corrective movement; these
-            # movements are performed immediately after "orient_vertical"
-            self.tangent_locs.append(
-                percept.location,
-            )
-            if "pose_vectors" in percept.morphological_features:
-                self.tangent_norms.append(
-                    percept.morphological_features["pose_vectors"][0]
-                )
-            else:
-                self.tangent_norms.append(None)
+        self.tangent_locs.append(
+            percept.location,
+        )
+        if "pose_vectors" in percept.morphological_features:
+            self.tangent_norms.append(percept.morphological_features["pose_vectors"][0])
+        else:
+            self.tangent_norms.append(None)
 
     def update_action_details(self):
         """Store informaton for later logging.
@@ -2314,5 +2313,5 @@ def sensor_rotations_identical(sensors: Collection[SensorState]) -> bool:
     """
     if len(sensors) <= 1:
         return True
-    rotations = [qt.as_float_array(sensor.rotation) for sensor in sensors.values()]
+    rotations = [qt.as_float_array(sensor.rotation) for sensor in sensors]
     return all(np.array_equal(rot, rotations[0]) for rot in rotations)
