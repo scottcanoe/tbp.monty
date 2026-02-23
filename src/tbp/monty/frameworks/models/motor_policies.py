@@ -470,7 +470,6 @@ class InformedPolicy(BasePolicy):
                 return result
 
             # - Jump succeeded. Move along.
-            result = None
             logger.debug(
                 "Object visible, maintaining new pose for hypothesis-testing action"
             )
@@ -487,7 +486,7 @@ class InformedPolicy(BasePolicy):
         undo_action = create_undo_action(self._last_action)
         self._result = MotorPolicyResult(
             actions=[undo_action],
-            status=PolicyStatus.BUSY,
+            status=PolicyStatus.READY,
             motor_only_step=False,
         )
         self._last_action = undo_action
@@ -829,7 +828,6 @@ class SurfacePolicy(InformedPolicy):
                 return result
 
             # - Jump succeeded. Move along.
-            result = None
             self.handle_successful_jump()
 
         # Check if we have poor visualization of the object
@@ -869,9 +867,12 @@ class SurfacePolicy(InformedPolicy):
             ]
             self.last_surface_policy_action = self.actions[0]
 
-        next_action = self.get_next_action(ctx, state)
-        assert next_action is not None, "Expected one action"
-        return MotorPolicyResult(actions=[next_action])
+        self.last_surface_policy_action = self.get_next_action(ctx, state)
+        return MotorPolicyResult(
+            actions=[self.last_surface_policy_action],
+            status=PolicyStatus.READY,
+            motor_only_step=isinstance(self.last_surface_policy_action, MoveForward),
+        )
 
     def post_actions(self, actions: list[Action]) -> None:
         """Temporary SurfacePolicy post_actions to distinguish types of last action.
@@ -904,12 +905,7 @@ class SurfacePolicy(InformedPolicy):
             return
 
         super().post_actions(actions)
-        if actions:
-            if not self._is_jump_action:
-                assert len(actions) == 1, "Expected one action: " + str(actions)
-                self.last_surface_policy_action = actions[0]
-        else:
-            self.last_surface_policy_action = None
+
 
     def _orient_horizontal(self, state: MotorSystemState) -> OrientHorizontal:
         """Orient the agent horizontally.
@@ -1036,8 +1032,7 @@ class SurfacePolicy(InformedPolicy):
             # move to the desired_object_distance if it is in view
             return self._move_forward()
 
-        assert False, "Expected last action to be one of the above"
-        # return None
+        return None
 
     def tangential_direction(
         self, ctx: RuntimeContext, state: MotorSystemState
@@ -1180,19 +1175,16 @@ class SurfacePolicy(InformedPolicy):
 
         A successful jump is "on-object", i.e. the object is perceived by the sensor.
         """
-
         logger.debug(
             "Object visible, maintaining new pose for hypothesis-testing action"
         )
 
         # Reset the action cycle.
-        self.actions = [
-            MoveTangentially(
-                agent_id=self.agent_id,
-                distance=0.0,
-                direction=(0, 0, 0),
-            )
-        ]
+        self.last_surface_policy_action = MoveTangentially(
+            agent_id=self.agent_id,
+            distance=0.0,
+            direction=(0, 0, 0),
+        )
 
         # TODO clean up where this is performed, and make variable names more
         #   general
