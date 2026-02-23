@@ -2217,7 +2217,7 @@ class Jump(MotorPolicy):
         self._undo_command = MotorPolicyResult(
             actions=undo_actions,
             status=PolicyStatus.READY,
-            motor_only_step=True,
+            motor_only_step=False,
         )
 
     def should_undo(
