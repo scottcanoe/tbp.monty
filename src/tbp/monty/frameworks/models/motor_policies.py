@@ -462,7 +462,7 @@ class InformedPolicy(BasePolicy):
             self._jump_policy = None
 
             # - Jump failed. Return undo actions.
-            if result.status == PolicyStatus.BUSY:
+            if result.actions:
                 logger.debug(
                     "No object visible from hypothesis jump, or inside object!"
                 )
@@ -499,24 +499,6 @@ class InformedPolicy(BasePolicy):
     ) -> None:
         self.actions = actions
         self.episode_step += 1
-
-    def handle_failed_jump(self) -> None:
-        """Deal with the results of a failed hypothesis-testing jump.
-
-        A failed jump is "off-object", i.e. the object is not perceived by the sensor.
-        """
-        logger.debug("No object visible from hypothesis jump, or inside object!")
-        logger.debug("Returning to previous position")
-        self._jump_to = None
-
-    def handle_successful_jump(self) -> None:
-        """Deal with the results of a successful hypothesis-testing jump.
-
-        A successful jump is "on-object", i.e. the object is perceived by the sensor.
-        """
-        logger.debug(
-            "Object visible, maintaining new pose for hypothesis-testing action"
-        )
 
 
 class NaiveScanPolicy(InformedPolicy):
@@ -822,32 +804,32 @@ class SurfacePolicy(InformedPolicy):
         driving_goal_state = self.driving_goal_state
         self.driving_goal_state = None
 
-        self._is_jump_action = False
-
         if driving_goal_state and self.use_goal_state_driven_actions:
-            self._jump_to = Jump(
+            # If we are post-jump but have a new goal, we don't care about checking
+            # whether we have to undo the previous jump. Just jump to the new goal.
+            self._jump_policy = Jump(
                 agent_id=self.agent_id,
                 sensor_id=SensorID("view_finder"),
                 goal=driving_goal_state,
             )
-            self._result = self._jump_to(ctx, observations, state)
-            self._is_jump_action = True
-            return self._result
+            return self._jump_policy(ctx, observations, state)
 
-        if self._jump_to:
-            # We've just jumped.
-            undo = self._result.undo
-            if undo.should_undo(ctx, observations, state):
-                # Grab undoing actions, and package them for return.
-                self._result = MotorPolicyResult(
-                    actions=undo.actions,
-                    motor_only_step=True,
-                    undo=None,
+        if self._jump_policy:
+            # We jumped on the last step. Check if we need to undo it, and
+            # remove the jump policy since we're done with it either way.
+            result = self._jump_policy(ctx, observations, state)
+            self._jump_policy = None
+
+            # - Jump failed. Return undo actions.
+            if result.actions:
+                logger.debug(
+                    "No object visible from hypothesis jump, or inside object!"
                 )
-                self.handle_failed_jump()  # logging, etc.
-                self._is_jump_action = True
-                return self._result
+                logger.debug("Returning to previous position")
+                return result
 
+            # - Jump succeeded. Move along.
+            result = None
             self.handle_successful_jump()
 
         # Check if we have poor visualization of the object
@@ -1198,7 +1180,10 @@ class SurfacePolicy(InformedPolicy):
 
         A successful jump is "on-object", i.e. the object is perceived by the sensor.
         """
-        super().handle_successful_jump()
+
+        logger.debug(
+            "Object visible, maintaining new pose for hypothesis-testing action"
+        )
 
         # Reset the action cycle.
         self.actions = [
