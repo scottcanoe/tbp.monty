@@ -1,0 +1,40 @@
+defaults:
+  - base_config_10distinctobj_dist_agent
+  - config/monty/clear_monty_config@config
+  - config/monty/surface_and_view_sota@config.monty_config
+  - config/monty/learning_modules/clear_learning_module_configs@config.monty_config
+  - config/monty/learning_modules/lower_max_nneighbors_surf_1lm@config.monty_config.learning_module_configs
+  - config/monty/motor_system/clear_motor_system_config@config.monty_config
+  - config/monty/motor_system/cur_informed_surface_goal_state_driven@config.monty_config.motor_system_config
+  - config/monty/args/clear_monty_args@config.monty_config
+  - config/monty/args/defaults@config.monty_config.monty_args
+  - config/environment/clear_env_interface_config@config
+  - config/environment/surface_view_finder_mount_habitat@config.env_interface_config
+
+_target_: tbp.monty.frameworks.experiments.object_recognition_experiments.MontyObjectRecognitionExperiment
+config:
+  model_name_or_path: ${benchmarks.pretrained_dir}/surf_agent_1lm_10distinctobj/pretrained/
+  n_eval_epochs: 1
+  max_eval_steps: 100
+
+  logging:
+    run_name: debug_surf_agent
+    output_dir: ${path.expanduser:${oc.env:MONTY_LOGS}/projects/monty_runs}
+    monty_log_level: DETAILED
+    monty_handlers:
+      - ${monty.class:tbp.monty.frameworks.loggers.monty_handlers.BasicCSVStatsHandler}
+      - ${monty.class:tbp.monty.frameworks.loggers.monty_handlers.DetailedJSONHandler}
+    wandb_handlers: []
+    python_log_level: INFO
+    resume_wandb_run: false
+  monty_config:
+    monty_args:
+      min_eval_steps: ${benchmarks.min_eval_steps}
+  eval_env_interface_class: ${monty.class:tbp.monty.frameworks.environments.embodied_data.InformedEnvironmentInterface}
+  eval_env_interface_args:
+    object_names:
+      - mug
+    object_init_sampler:
+      _target_: tbp.monty.frameworks.environments.object_init_samplers.Predefined
+      rotations:
+        - [0, 0, 0]
