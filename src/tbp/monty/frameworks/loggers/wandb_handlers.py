@@ -45,10 +45,12 @@ class WandbWrapper(MontyHandler):
         config: dict | None = None,
         resume_wandb_run: bool = False,
         wandb_id: str | None = None,
+        tags: list[str] | None = None,
     ):
         self.name = run_name
         self.group = wandb_group
         self.config = config
+        self.tags = tags
         self.wandb_logger = wandb.init(
             name=self.name,
             group=self.group,
@@ -56,6 +58,7 @@ class WandbWrapper(MontyHandler):
             config=config,
             resume=resume_wandb_run,
             id=wandb_id,
+            tags=tags,
         )
         self.wandb_handlers = [wandb_handler() for wandb_handler in wandb_handlers]
 

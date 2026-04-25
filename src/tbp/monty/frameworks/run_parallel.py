@@ -617,13 +617,15 @@ def run_episodes_parallel(
     )
     start_time = time.time()
     log_parallel_wandb = experiments[0]["config"]["logging"]["log_parallel_wandb"]
+    tags = experiments[0]["config"]["logging"].get("wandb_tags", None)
     if log_parallel_wandb:
         run = wandb.init(
             name=experiment_name,
             group=experiments[0]["config"]["logging"]["wandb_group"],
             project="Monty",
-            config=experiments[0],
+            config=experiments[0],  # type: ignore[arg-type]
             id=hydra.utils.instantiate(experiments[0]["config"]["logging"]["wandb_id"]),
+            tags=tags,
         )
     print(f"Wandb setup took {time.time() - start_time} seconds")
     start_time = time.time()

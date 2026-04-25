@@ -370,6 +370,7 @@ class MontyExperiment:
         self.monty_log_level = logging_config["monty_log_level"]
         self.monty_handlers = logging_config["monty_handlers"]
         self.wandb_handlers = logging_config["wandb_handlers"]
+        wandb_tags = logging_config.get("wandb_tags")
 
         # Configure Monty logging
         monty_handlers = []
@@ -387,6 +388,7 @@ class MontyExperiment:
             wandb_args.update(
                 config=dict(self.config),
                 run_name=wandb_args["run_name"] + "_" + wandb_args["wandb_id"],
+                tags=wandb_tags,
             )
             monty_handlers.append(WandbWrapper(**wandb_args))
             for handler in self.wandb_handlers:
