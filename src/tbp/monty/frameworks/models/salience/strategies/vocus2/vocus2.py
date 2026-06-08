@@ -148,9 +148,14 @@ class SafeOperatingLimits(OperatingLimits):
             < fractional_center_sigma
             + SafeOperatingLimits.min_fractional_sigma_separation
         ):
+            min_allowed_surround_sigma = min_image_dim_size * (
+                fractional_center_sigma
+                + SafeOperatingLimits.min_fractional_sigma_separation
+            )
             return ValueError(
-                "Surround sigma must be greater than or equal to center_sigma + "
-                "min_fractional_sigma_separation."
+                f"When smallest image dimension is {min_image_dim_size}, and center "
+                f"sigma is {center_sigma}, surround sigma must be greater than or "
+                f"equal to {min_allowed_surround_sigma}. You provided {surround_sigma}."
             )
 
         # Check center sigma is within the allowed range.
