@@ -69,6 +69,7 @@ class SnapshotTelemetry:
         """Reset the snapshot telemetry."""
         self.raw_observations = []
         self.poses = []
+        self.info = []
 
     def raw_observation(
         self,
