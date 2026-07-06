@@ -22,6 +22,7 @@ from tbp.monty.frameworks.models.salience.on_object_observation import (
     on_object_observation,
 )
 from tbp.monty.frameworks.models.salience.return_inhibitor import ReturnInhibitor
+from tbp.monty.frameworks.models.salience.segmentation import SlicMerge
 from tbp.monty.frameworks.models.salience.strategies import (
     SalienceStrategy,
     Uniform,
@@ -58,6 +59,8 @@ class SalienceSM(SensorModule):
         # TODO: Goes away once experiment code is extracted
         self.is_exploring = False
 
+        self._segmenter = SlicMerge()
+
     @property
     def sensor_module_id(self) -> str:
         return self._sensor_module_id
@@ -70,7 +73,7 @@ class SalienceSM(SensorModule):
         sensor = agent.sensors[SensorID(self.sensor_module_id)]
         self.state = SensorState(
             position=agent.position
-            + qt.rotate_vectors(agent.rotation, sensor.position),
+            + qt.rotate_vectors(agent.rotation, sensor.position),  # type: ignore
             rotation=agent.rotation * sensor.rotation,
         )
 
@@ -92,18 +95,18 @@ class SalienceSM(SensorModule):
             motor_only_step: Whether the current step is a motor-only step.
 
         """
-        if self._save_raw_obs and not self.is_exploring:
-            self._snapshot_telemetry.raw_observation(
-                observation, self.state.rotation, self.state.position
-            )
 
         if motor_only_step:
             return
 
         salience_map = self._salience_strategy(
-            ctx=ctx, rgba=observation["rgba"], depth=observation["depth"]
+            ctx=ctx,
+            rgba=observation["rgba"],
+            depth=observation["depth"],  # type: ignore
         )
-
+        rgb = observation["rgba"][:, :, :3]
+        segmentation_mask = self._segmenter.segment(rgb)  # type: ignore
+        salience_map = salience_map * segmentation_mask
         on_object = on_object_observation(observation, salience_map)
         ior_weights = self._return_inhibitor(
             on_object.center_location, on_object.locations
@@ -123,6 +126,19 @@ class SalienceSM(SensorModule):
             )
             for i in range(len(on_object.locations))
         ]
+        
+        if self._save_raw_obs and not self.is_exploring:
+            info = {
+                "salience_map": salience_map,
+                "segmentation_mask": segmentation_mask,
+                "goals": self._goals,
+            }   
+            self._snapshot_telemetry.raw_observation(
+                observation,
+                self.state.rotation,
+                self.state.position,  # type: ignore
+                info=info,
+            )
 
     def _weight_salience(
         self,

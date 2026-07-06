@@ -63,6 +63,7 @@ class SnapshotTelemetry:
     def __init__(self) -> None:
         self.poses: list[dict[str, np.ndarray]] = []
         self.raw_observations: list[SensorObservation] = []
+        self.info: list[dict] = []
 
     def reset(self):
         """Reset the snapshot telemetry."""
@@ -74,6 +75,7 @@ class SnapshotTelemetry:
         raw_observation: SensorObservation,
         rotation: qt.quaternion,
         position: np.ndarray,
+        info: dict | None = None,
     ):
         """Record a snapshot of a raw observation and its pose information.
 
@@ -89,6 +91,7 @@ class SnapshotTelemetry:
                 sm_location=np.array(position),
             )
         )
+        self.info.append(info if info is not None else {})
 
     def state_dict(self) -> Memento:
         """Returns recorded raw observation snapshots.
@@ -100,7 +103,7 @@ class SnapshotTelemetry:
         assert len(self.poses) == len(self.raw_observations), (
             "Each raw observation should have a corresponding pose information."
         )
-        return dict(raw_observations=self.raw_observations, sm_properties=self.poses)
+        return dict(raw_observations=self.raw_observations, sm_properties=self.poses, info=self.info)
 
 
 class SurfaceNormalMethod(Enum):
