@@ -90,7 +90,7 @@ eval_env_interface_args:
   # - 011_cylinder
   # - 016_sphere
   # - 023_mug
-  # - 012_cylinder_tbp_horz
+  - 012_cylinder_tbp_horz
   # - 014_cylinder_numenta_horz
   # - 017_sphere_tbp_horz
   # - 019_sphere_numenta_horz
@@ -102,10 +102,10 @@ eval_env_interface_args:
   # - 010_disk_numenta_vert
   # - 013_cylinder_tbp_vert
   # - 015_cylinder_numenta_vert
-  # - 018_sphere_tbp_vert
+  - 018_sphere_tbp_vert
   # - 020_sphere_numenta_vert
   # - 025_mug_tbp_vert
-  # - 027_mug_numenta_vert
+  - 027_mug_numenta_vert
   object_init_sampler:
     _target_: tbp.monty.frameworks.environments.object_init_samplers.Predefined
     rotations:
