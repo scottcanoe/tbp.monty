@@ -27,7 +27,7 @@ experiment:
     supervised_lm_ids: []
     python_log_level: DEBUG
     logging:
-      run_name: infer_comp_lvl3_seg
+      run_name: infer_comp_lvl3_seg_debug
       detailed_save_per_episode: true
       output_dir: /Users/scott/tbp/projects/segmentation/experiment_output
     monty_config:

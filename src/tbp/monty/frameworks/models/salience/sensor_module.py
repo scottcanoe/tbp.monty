@@ -106,7 +106,23 @@ class SalienceSM(SensorModule):
         )
         rgb = observation["rgba"][:, :, :3]
         segmentation_mask = self._segmenter.segment(rgb)  # type: ignore
-        salience_map = salience_map * segmentation_mask
+        salience_map = salience_map * segmentation_mask  # weighting in pixel space
+
+        # This is where we need to keep a point cloud or voxels representing the
+        # segmentation area.
+        grid_shape = observation["rgba"].shape[:2]
+        semantic_3d = observation["semantic_3d"]
+        all_locations = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
+        seg_rows, seg_cols = np.where(segmentation_mask)
+        seg_locations = all_locations[seg_rows, seg_cols]
+        # seg_locations is a 2d array of shape (num_pixels, 3), where 3 is xyz coords.
+
+        # what we'd need to do, instead of 2d weighting, is zero out goal confidences
+        # (or discard them) if they are not near anything in seg_locations.
+        # Claude, give me ideas here.
+        
+
+
         on_object = on_object_observation(observation, salience_map)
         ior_weights = self._return_inhibitor(
             on_object.center_location, on_object.locations
