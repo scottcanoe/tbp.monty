@@ -42,6 +42,8 @@ class SalienceSM(SensorModule):
         salience_strategy: SalienceStrategy | None = None,
         return_inhibitor: ReturnInhibitor | None = None,
         snapshot_telemetry: SnapshotTelemetry | None = None,
+        voxel_size: float = 0.01,
+        voxel_lifetime: int = 3,
     ) -> None:
         self._sensor_module_id = sensor_module_id
         self._save_raw_obs = save_raw_obs
@@ -54,12 +56,15 @@ class SalienceSM(SensorModule):
         self._snapshot_telemetry = (
             SnapshotTelemetry() if snapshot_telemetry is None else snapshot_telemetry
         )
+        self._voxel_size = voxel_size
+        self._voxel_lifetime = voxel_lifetime
 
         self._goals: list[Goal] = []
         # TODO: Goes away once experiment code is extracted
         self.is_exploring = False
 
         self._segmenter = SlicMerge()
+        self._voxel_grid: set[tuple[int, int, int]] = set()
 
     @property
     def sensor_module_id(self) -> str:
@@ -106,22 +111,12 @@ class SalienceSM(SensorModule):
         )
         rgb = observation["rgba"][:, :, :3]
         segmentation_mask = self._segmenter.segment(rgb)  # type: ignore
-        salience_map = salience_map * segmentation_mask  # weighting in pixel space
 
-        # This is where we need to keep a point cloud or voxels representing the
-        # segmentation area.
-        grid_shape = observation["rgba"].shape[:2]
-        semantic_3d = observation["semantic_3d"]
-        all_locations = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
-        seg_rows, seg_cols = np.where(segmentation_mask)
-        seg_locations = all_locations[seg_rows, seg_cols]
-        # seg_locations is a 2d array of shape (num_pixels, 3), where 3 is xyz coords.
+        # Build voxel grid from segmentation mask
+        seg_voxels = self._build_voxel_grid(observation, segmentation_mask)
 
-        # what we'd need to do, instead of 2d weighting, is zero out goal confidences
-        # (or discard them) if they are not near anything in seg_locations.
-        # Claude, give me ideas here.
-        
-
+        # TODO: growing/shrinking voxel grid over time.
+        self._voxel_grid = seg_voxels
 
         on_object = on_object_observation(observation, salience_map)
         ior_weights = self._return_inhibitor(
@@ -129,6 +124,8 @@ class SalienceSM(SensorModule):
         )
         salience = self._weight_salience(ctx, on_object.salience, ior_weights)
 
+        # Filter goals to only include those within segmented voxels
+        in_voxel_grid = self._in_voxel_grid(on_object.locations)
         self._goals = [
             Goal(
                 location=on_object.locations[i],
@@ -140,15 +137,15 @@ class SalienceSM(SensorModule):
                 sender_type="SM",
                 goal_tolerances=None,
             )
-            for i in range(len(on_object.locations))
+            for i in np.flatnonzero(in_voxel_grid)
         ]
-        
+
         if self._save_raw_obs and not self.is_exploring:
             info = {
                 "salience_map": salience_map,
                 "segmentation_mask": segmentation_mask,
                 "goals": self._goals,
-            }   
+            }
             self._snapshot_telemetry.raw_observation(
                 observation,
                 self.state.rotation,
@@ -195,11 +192,58 @@ class SalienceSM(SensorModule):
 
         return (weighted_salience - min_) / scale
 
+    def _build_voxel_grid(
+        self, observation: SensorObservation, segmentation_mask: np.ndarray
+    ) -> set[tuple[int, int, int]]:
+        """Build a set of occupied voxels from segmentation mask.
+
+        Args:
+            observation: Sensor observation containing semantic_3d data.
+            segmentation_mask: Binary mask indicating segmented pixels.
+
+        Returns:
+            Set of voxel indices as (x, y, z) tuples.
+
+        """
+        grid_shape = observation["rgba"].shape[:2]
+        semantic_3d = observation["semantic_3d"]
+        all_locations = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
+        seg_rows, seg_cols = np.where(segmentation_mask)
+        seg_locations = all_locations[seg_rows, seg_cols]
+
+        if len(seg_locations) == 0:
+            return set()
+
+        voxel_indices = (seg_locations / self._voxel_size).astype(int)
+        return set(map(tuple, voxel_indices))
+
+    def _in_voxel_grid(self, locations: np.ndarray) -> np.ndarray:
+        """Check which locations fall within an occupied voxel.
+
+        Args:
+            locations: 3D coordinates as array of shape (num_locations, 3).
+
+        Returns:
+            Boolean array of shape (num_locations,) that is True wherever the
+            corresponding location's voxel is in the grid.
+
+        """
+        if len(self._voxel_grid) == 0:
+            return np.zeros(len(locations), dtype=bool)
+
+        voxel_indices = (locations / self._voxel_size).astype(int)
+        return np.fromiter(
+            (tuple(idx) in self._voxel_grid for idx in voxel_indices),
+            dtype=bool,
+            count=len(voxel_indices),
+        )
+
     def reset(self) -> None:
         self._goals.clear()
         self._return_inhibitor.reset()
         self._snapshot_telemetry.reset()
         self.is_exploring = False
+        self._voxel_grid.clear()
 
     def propose_goals(self) -> list[Goal]:
         return self._goals
