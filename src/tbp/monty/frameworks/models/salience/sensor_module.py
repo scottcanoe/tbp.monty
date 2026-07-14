@@ -42,8 +42,8 @@ class SalienceSM(SensorModule):
         salience_strategy: SalienceStrategy | None = None,
         return_inhibitor: ReturnInhibitor | None = None,
         snapshot_telemetry: SnapshotTelemetry | None = None,
-        voxel_size: float = 0.01,
-        voxel_lifetime: int = 3,
+        voxel_size: float = 0.001,
+        voxel_lifetime: int = 6,
     ) -> None:
         self._sensor_module_id = sensor_module_id
         self._save_raw_obs = save_raw_obs
@@ -56,6 +56,8 @@ class SalienceSM(SensorModule):
         self._snapshot_telemetry = (
             SnapshotTelemetry() if snapshot_telemetry is None else snapshot_telemetry
         )
+        if voxel_lifetime < 1:
+            raise ValueError(f"voxel_lifetime must be >= 1, got {voxel_lifetime}")
         self._voxel_size = voxel_size
         self._voxel_lifetime = voxel_lifetime
 
@@ -64,7 +66,9 @@ class SalienceSM(SensorModule):
         self.is_exploring = False
 
         self._segmenter = SlicMerge()
-        self._voxel_grid: set[tuple[int, int, int]] = set()
+        # Maps an occupied voxel to the number of steps it survives without being
+        # re-observed.
+        self._voxel_grid: dict[tuple[int, int, int], int] = {}
 
     @property
     def sensor_module_id(self) -> str:
@@ -112,11 +116,8 @@ class SalienceSM(SensorModule):
         rgb = observation["rgba"][:, :, :3]
         segmentation_mask = self._segmenter.segment(rgb)  # type: ignore
 
-        # Build voxel grid from segmentation mask
-        seg_voxels = self._build_voxel_grid(observation, segmentation_mask)
-
-        # TODO: growing/shrinking voxel grid over time.
-        self._voxel_grid = seg_voxels
+        observed_voxels = self._observed_voxels(observation, segmentation_mask)
+        self._age_voxel_grid(observed_voxels)
 
         on_object = on_object_observation(observation, salience_map)
         ior_weights = self._return_inhibitor(
@@ -124,7 +125,7 @@ class SalienceSM(SensorModule):
         )
         salience = self._weight_salience(ctx, on_object.salience, ior_weights)
 
-        # Filter goals to only include those within segmented voxels
+        # Only build goals for locations within the allowed voxel grid.
         in_voxel_grid = self._in_voxel_grid(on_object.locations)
         self._goals = [
             Goal(
@@ -141,10 +142,15 @@ class SalienceSM(SensorModule):
         ]
 
         if self._save_raw_obs and not self.is_exploring:
+            voxels, lifetimes = self._voxel_grid_arrays()
             info = {
                 "salience_map": salience_map,
                 "segmentation_mask": segmentation_mask,
                 "goals": self._goals,
+                "voxel_grid": voxels,
+                "voxel_lifetimes": lifetimes,
+                "voxel_size": self._voxel_size,
+                "voxel_lifetime": self._voxel_lifetime,
             }
             self._snapshot_telemetry.raw_observation(
                 observation,
@@ -192,10 +198,30 @@ class SalienceSM(SensorModule):
 
         return (weighted_salience - min_) / scale
 
-    def _build_voxel_grid(
+    def _voxel_indices(self, locations: np.ndarray) -> np.ndarray:
+        """Quantize 3D locations into integer voxel indices.
+
+        Flooring (rather than truncating toward zero) keeps every voxel the same
+        size; truncation would make the bins straddling each coordinate plane
+        twice as wide.
+
+        Args:
+            locations: 3D coordinates as array of shape (num_locations, 3).
+
+        Returns:
+            Integer voxel indices of shape (num_locations, 3).
+
+        """
+        return np.floor(locations / self._voxel_size).astype(int)
+
+    def _observed_voxels(
         self, observation: SensorObservation, segmentation_mask: np.ndarray
     ) -> set[tuple[int, int, int]]:
-        """Build a set of occupied voxels from segmentation mask.
+        """Compute the set of voxels covered by the current segmentation mask.
+
+        Only on-object pixels contribute. The segmentation mask can bleed into the
+        background, and those pixels carry max-depth locations that would otherwise
+        accumulate in the grid as the sensor moves.
 
         Args:
             observation: Sensor observation containing semantic_3d data.
@@ -208,14 +234,46 @@ class SalienceSM(SensorModule):
         grid_shape = observation["rgba"].shape[:2]
         semantic_3d = observation["semantic_3d"]
         all_locations = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
-        seg_rows, seg_cols = np.where(segmentation_mask)
+        on_object = semantic_3d[:, 3].reshape(grid_shape).astype(int) > 0
+        seg_rows, seg_cols = np.where(np.logical_and(segmentation_mask, on_object))
         seg_locations = all_locations[seg_rows, seg_cols]
 
         if len(seg_locations) == 0:
             return set()
 
-        voxel_indices = (seg_locations / self._voxel_size).astype(int)
-        return set(map(tuple, voxel_indices))
+        return set(map(tuple, self._voxel_indices(seg_locations)))
+
+    def _age_voxel_grid(self, observed_voxels: set[tuple[int, int, int]]) -> None:
+        """Advance the voxel grid by one step.
+
+        Voxels in `observed_voxels` have their lifetime refreshed to the maximum.
+        All others tick down by one and are dropped once their lifetime expires.
+
+        Args:
+            observed_voxels: Voxels covered by the current segmentation mask.
+
+        """
+        aged = {
+            voxel: lifetime - 1
+            for voxel, lifetime in self._voxel_grid.items()
+            if lifetime > 1
+        }
+        aged.update(dict.fromkeys(observed_voxels, self._voxel_lifetime))
+        self._voxel_grid = aged
+
+    def _voxel_grid_arrays(self) -> tuple[np.ndarray, np.ndarray]:
+        """Flatten the voxel grid into arrays suitable for telemetry.
+
+        Returns:
+            A (voxels, lifetimes) pair, where `voxels` has shape (num_voxels, 3)
+            and holds integer voxel indices, and `lifetimes` has shape
+            (num_voxels,) and holds each voxel's remaining lifetime. Rows
+            correspond elementwise.
+
+        """
+        voxels = np.array(list(self._voxel_grid.keys()), dtype=int).reshape(-1, 3)
+        lifetimes = np.array(list(self._voxel_grid.values()), dtype=int)
+        return voxels, lifetimes
 
     def _in_voxel_grid(self, locations: np.ndarray) -> np.ndarray:
         """Check which locations fall within an occupied voxel.
@@ -231,7 +289,7 @@ class SalienceSM(SensorModule):
         if len(self._voxel_grid) == 0:
             return np.zeros(len(locations), dtype=bool)
 
-        voxel_indices = (locations / self._voxel_size).astype(int)
+        voxel_indices = self._voxel_indices(locations)
         return np.fromiter(
             (tuple(idx) in self._voxel_grid for idx in voxel_indices),
             dtype=bool,
