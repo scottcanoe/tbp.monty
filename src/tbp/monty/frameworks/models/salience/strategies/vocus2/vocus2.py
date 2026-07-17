@@ -221,7 +221,7 @@ class ColorChannelSalience:
         self._combine = combine
         self._collapse = collapse
         self._operating_limits = (
-            operating_limits if operating_limits is not None else SafeOperatingLimits()
+            operating_limits if operating_limits is not None else NoOperatingLimits()
         )
 
     def process(
@@ -284,7 +284,7 @@ class DepthSalience:
         self._max_octaves = max_octaves
         self._collapse = collapse
         self._operating_limits = (
-            operating_limits if operating_limits is not None else SafeOperatingLimits()
+            operating_limits if operating_limits is not None else NoOperatingLimits()
         )
 
     def process(

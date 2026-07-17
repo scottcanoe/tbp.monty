@@ -8,13 +8,14 @@
 # https://opensource.org/licenses/MIT.
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, Any
 
 from typing_extensions import Self
 
 from tbp.monty.context import RuntimeContext
 from tbp.monty.frameworks.actions.actions import Action
 from tbp.monty.frameworks.models.abstract_monty_classes import Monty, Observations
+
 
 __all__ = [
     "NoOpStepHook",
@@ -33,6 +34,7 @@ class StepHook(Protocol):
         step: int,
         observations: Observations,
         actions: list[Action],
+        experiment: Any | None = None,
     ) -> list[Action]:
         """Execute the step hook.
 
@@ -75,6 +77,7 @@ class NoOpStepHook(StepHook):
         step: int,  # noqa: ARG002
         observations: Observations,  # noqa: ARG002
         actions: list[Action],
+        experiment: Any | None = None,  # noqa: ARG002
     ) -> list[Action]:
         return actions
 

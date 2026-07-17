@@ -119,6 +119,7 @@ class MontySupervisedObjectPretrainingExperiment(MontyExperiment):
                     num_steps,
                     observations,
                     actions,
+                    experiment=self,
                 )
             except StopIteration:
                 # TODO: StopIteration is being thrown by NaiveScanPolicy to signal

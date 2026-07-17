@@ -144,6 +144,7 @@ class MontyObjectRecognitionExperiment(MontyExperiment):
                         step,
                         observations,
                         actions,
+                        experiment=self,
                     )
             except StopIteration:
                 # TODO: StopIteration is being thrown by NaiveScanPolicy to signal

@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - constants: defaults
-  - experiment: ??
+  - experiment: base_77obj_dist_agent
 
 # Global defaults for the experiment config itself
 experiment:
