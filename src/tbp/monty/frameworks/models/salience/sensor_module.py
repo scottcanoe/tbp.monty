@@ -23,8 +23,8 @@ from tbp.monty.frameworks.models.salience.on_object_observation import (
     on_object_observation,
 )
 from tbp.monty.frameworks.models.salience.region import (
-    DecayingVoxelGrid,
     RegionTracker,
+    VoxelGrid,
 )
 from tbp.monty.frameworks.models.salience.return_inhibitor import ReturnInhibitor
 from tbp.monty.frameworks.models.salience.segmentation.protocol import (
@@ -65,9 +65,7 @@ class SalienceSM(SensorModule):
         )
         # Accumulates observed points into an estimate of the object's region in
         # space; owns all voxel/region representation and merging details.
-        self._region_tracker = (
-            DecayingVoxelGrid() if region_tracker is None else region_tracker
-        )
+        self._region_tracker = VoxelGrid() if region_tracker is None else region_tracker
 
         self._goals: list[Goal] = []
         # TODO: Goes away once experiment code is extracted
@@ -140,8 +138,10 @@ class SalienceSM(SensorModule):
             segmentation_mask = self._segmentation_strategy(
                 ctx=ctx, rgba=rgba, depth=depth
             )
-            observed_points = self._segmented_points(observation, segmentation_mask)
-            self._region_tracker.observe(observed_points)
+            observed_points, observed_features = self._segmented_points(
+                observation, segmentation_mask, salience_map
+            )
+            self._region_tracker.observe(observed_points, observed_features)
             # Only build goals for locations within the tracked region.
             goal_indices = np.flatnonzero(
                 self._region_tracker.contains(on_object.locations)
@@ -218,25 +218,40 @@ class SalienceSM(SensorModule):
         return (weighted_salience - min_) / scale
 
     def _segmented_points(
-        self, observation: SensorObservation, segmentation_mask: np.ndarray
-    ) -> npt.NDArray[np.float64]:
-        """Extract on-object, world-coordinate points under the segmentation mask.
+        self,
+        observation: SensorObservation,
+        segmentation_mask: np.ndarray,
+        salience_map: np.ndarray,
+    ) -> tuple[npt.NDArray[np.float64], dict[str, npt.NDArray]]:
+        """Extract on-object segmented points and the features aligned with them.
 
         Only on-object pixels contribute. The segmentation mask can bleed into the
         background, and those pixels carry max-depth locations that would otherwise
-        pollute the region estimate as the sensor moves.
+        pollute the region estimate as the sensor moves. Every returned feature is
+        sampled at the same pixels as the points, so it stays row-aligned with them.
 
         Args:
-            observation: Sensor observation containing semantic_3d data.
+            observation: Sensor observation containing rgba, depth, and semantic_3d.
             segmentation_mask: Binary mask indicating segmented pixels.
+            salience_map: Per-pixel salience with the same grid shape as the frame.
 
         Returns:
-            World-coordinate points as an ``(num_points, 3)`` array, possibly empty.
+            A ``(points, features)`` pair. ``points`` is an ``(num_points, 3)``
+            array of world coordinates; ``features`` maps ``salience``/``depth``/
+            ``rgba`` to arrays whose leading axis matches ``points``.
 
         """
-        grid_shape = observation["rgba"].shape[:2]
+        rgba, depth = observation["rgba"], observation["depth"]
+        grid_shape = rgba.shape[:2]
         semantic_3d = observation["semantic_3d"]
         all_locations = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
         on_object = semantic_3d[:, 3].reshape(grid_shape).astype(int) > 0
         seg_rows, seg_cols = np.where(np.logical_and(segmentation_mask, on_object))
-        return all_locations[seg_rows, seg_cols]
+
+        points = all_locations[seg_rows, seg_cols]
+        features = {
+            "salience": salience_map[seg_rows, seg_cols],
+            "depth": depth[seg_rows, seg_cols],
+            "rgba": rgba[seg_rows, seg_cols],
+        }
+        return points, features
