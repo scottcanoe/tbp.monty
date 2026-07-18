@@ -104,7 +104,11 @@ class SnapshotTelemetry:
         assert len(self.poses) == len(self.raw_observations), (
             "Each raw observation should have a corresponding pose information."
         )
-        return dict(raw_observations=self.raw_observations, sm_properties=self.poses, info=self.info)
+        return dict(
+            raw_observations=self.raw_observations,
+            sm_properties=self.poses,
+            info=self.info,
+        )
 
 
 class SurfaceNormalMethod(Enum):
