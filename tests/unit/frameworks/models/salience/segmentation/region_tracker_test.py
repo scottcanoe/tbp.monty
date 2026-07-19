@@ -100,68 +100,96 @@ class RegionTrackerContainsTest(unittest.TestCase):
         self.tracker.step(ALL_POINTS, {"rgb": ALL_RGB})
 
     def test_many_locations_yield_an_array(self) -> None:
-        result = self.tracker.contains(np.array([[0.0, 0, 0], [9.0, 9, 9]]))
+        result = self.tracker.contains_points(np.array([[0.0, 0, 0], [9.0, 9, 9]]))
         np.testing.assert_array_equal(result, [True, False])
 
-    def test_a_single_location_yields_a_builtin_bool(self) -> None:
-        # Not np.bool_: the result is annotated as a bool and may be serialized.
-        inside = self.tracker.contains(np.array([0.0, 0, 0]))
-        self.assertIsInstance(inside, bool)
-        self.assertTrue(inside)
-        self.assertFalse(self.tracker.contains(np.array([9.0, 9, 9])))
+    def test_a_single_flat_point_is_accepted(self) -> None:
+        # Normalized to (1, 3), so the result is still an array.
+        np.testing.assert_array_equal(
+            self.tracker.contains_points(np.array([0.0, 0, 0])), [True]
+        )
 
     def test_any_location_in_an_occupied_voxel_is_contained(self) -> None:
         # A different point in the same voxel as an observed one.
-        self.assertTrue(self.tracker.contains(np.array([0.009, 0, 0])))
+        np.testing.assert_array_equal(
+            self.tracker.contains_points(np.array([[0.009, 0, 0]])), [True]
+        )
 
     def test_an_empty_grid_contains_nothing(self) -> None:
         empty = RegionTracker(voxel_size=0.01)
-        self.assertFalse(empty.contains(np.array([0.0, 0, 0])))
-        np.testing.assert_array_equal(empty.contains(np.array([[0.0, 0, 0]])), [False])
+        np.testing.assert_array_equal(
+            empty.contains_points(np.array([[0.0, 0, 0]])), [False]
+        )
 
 
 class RegionTrackerRegionsTest(unittest.TestCase):
     def test_separated_voxels_form_distinct_regions(self) -> None:
         tracker = RegionTracker(voxel_size=0.01)
         tracker.step(ALL_POINTS, {"rgb": ALL_RGB})
-        self.assertEqual(len(tracker.regions()), 2)
+        self.assertEqual(len(tracker.connected_components()), 2)
 
     def test_adjacent_voxels_form_one_region(self) -> None:
         tracker = RegionTracker(voxel_size=0.01)
         adjacent = np.array([[0.0, 0, 0], [0.011, 0, 0]])
         tracker.step(adjacent, {"rgb": np.zeros((2, 3))})
-        self.assertEqual(len(tracker.regions()), 1)
+        self.assertEqual(len(tracker.connected_components()), 1)
 
     def test_a_region_carries_its_own_voxels_and_features(self) -> None:
         tracker = RegionTracker(voxel_size=0.01)
         tracker.step(ALL_POINTS, {"rgb": ALL_RGB})
-        regions = sorted(tracker.regions(), key=lambda r: r.voxels[0, 0])
+        regions = sorted(tracker.connected_components(), key=lambda r: r.voxels[0, 0])
         np.testing.assert_array_equal(regions[0].voxels, [[0, 0, 0]])
         np.testing.assert_allclose(
             regions[0].data["rgb"].to_numpy()[0], [150.0, 0.0, 0.0]
         )
 
     def test_an_empty_grid_has_no_regions(self) -> None:
-        self.assertEqual(RegionTracker().regions(), [])
+        self.assertEqual(RegionTracker().connected_components(), [])
 
     def test_regions_can_be_compared_by_a_features_distance(self) -> None:
         # The point of carrying features: telling regions apart.
         rgb = NumericFeature(3, np.float32)
         tracker = RegionTracker(voxel_size=0.01, features={"rgb": rgb})
         tracker.step(ALL_POINTS, {"rgb": ALL_RGB})
-        regions = sorted(tracker.regions(), key=lambda r: r.voxels[0, 0])
+        regions = sorted(tracker.connected_components(), key=lambda r: r.voxels[0, 0])
         summaries = [rgb.reduce(r.data["rgb"].to_numpy()) for r in regions]
         self.assertGreater(float(rgb.distance(summaries[0], summaries[1])), 100.0)
 
 
 class RegionTrackerStateDictTest(unittest.TestCase):
-    def test_exports_voxels_and_every_feature_row_aligned(self) -> None:
-        tracker = RegionTracker(voxel_size=0.01)
-        tracker.step(ALL_POINTS, {"rgb": ALL_RGB, "salience": ALL_SALIENCE})
-        state = tracker.state_dict()
-        self.assertEqual(state["voxels"].shape, (2, 3))
-        self.assertEqual(state["rgb"].shape, (2, 3))
-        self.assertEqual(state["salience"].shape, (2, 1))
+    def setUp(self) -> None:
+        self.tracker = RegionTracker(voxel_size=0.01)
+        self.tracker.step(ALL_POINTS, {"rgb": ALL_RGB, "salience": ALL_SALIENCE})
 
-    def test_an_empty_grid_exports_empty_voxels(self) -> None:
-        self.assertEqual(RegionTracker().state_dict()["voxels"].shape, (0, 3))
+    def test_exports_the_current_grid(self) -> None:
+        grid = self.tracker.state_dict()["grid"]
+        self.assertEqual(len(grid), 2)
+        self.assertEqual(grid.feature_names, ("rgb", "salience"))
+
+    def test_an_empty_grid_is_exported_as_an_empty_grid(self) -> None:
+        self.assertEqual(len(RegionTracker().state_dict()["grid"]), 0)
+
+
+class VoxelGridSnapshotTest(unittest.TestCase):
+    """A logged grid must not change when the tracker moves on."""
+
+    def test_len_counts_occupied_voxels(self) -> None:
+        tracker = RegionTracker(voxel_size=0.01)
+        tracker.step(ALL_POINTS, {"rgb": ALL_RGB})
+        self.assertEqual(len(tracker.grid), 2)
+        self.assertEqual(len(RegionTracker().grid), 0)
+
+    def test_a_copy_is_unaffected_by_later_steps(self) -> None:
+        tracker = RegionTracker(voxel_size=0.01)
+        tracker.step(ALL_POINTS, {"rgb": ALL_RGB})
+        snapshot = tracker.grid.copy()
+        tracker.step(FAR_POINT, {"rgb": ALL_RGB[2:]})
+        self.assertEqual(len(snapshot), 2)
+        self.assertEqual(len(tracker.grid), 1)
+
+    def test_a_copy_holds_its_own_data(self) -> None:
+        tracker = RegionTracker(voxel_size=0.01)
+        tracker.step(ALL_POINTS, {"rgb": ALL_RGB})
+        snapshot = tracker.grid.copy()
+        self.assertIsNot(snapshot.data, tracker.grid.data)
+        np.testing.assert_array_equal(snapshot.voxels, tracker.grid.voxels)

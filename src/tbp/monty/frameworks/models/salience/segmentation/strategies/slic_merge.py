@@ -1,3 +1,11 @@
+# Copyright 2025-2026 Thousand Brains Project
+#
+# Copyright may exist in Contributors' modifications
+# and/or contributions to the work.
+#
+# Use of this source code is governed by the MIT
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT.
 from __future__ import annotations
 
 from collections import deque
@@ -5,11 +13,12 @@ from collections import deque
 import cv2
 import numpy as np
 import numpy.typing as npt
+from skimage.segmentation import slic
+
+from tbp.monty.context import RuntimeContext
 from tbp.monty.frameworks.models.salience.segmentation.protocol import (
     SegmentationStrategy,
 )
-
-from skimage.segmentation import slic
 
 
 class SlicMerge(SegmentationStrategy):
@@ -66,6 +75,7 @@ class SlicMerge(SegmentationStrategy):
 
     def __call__(
         self,
+        ctx: RuntimeContext,  # noqa: ARG002
         rgba: np.ndarray,
         depth: np.ndarray | None = None,  # noqa: ARG002
         locations: np.ndarray | None = None,  # noqa: ARG002

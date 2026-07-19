@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import numpy as np
-import numpy.typing as npt
 import quaternion as qt
 
 from tbp.monty.cmp import Goal
@@ -19,9 +18,6 @@ from tbp.monty.frameworks.models.abstract_monty_classes import (
     SensorObservation,
 )
 from tbp.monty.frameworks.models.motor_system_state import AgentState, SensorState
-from tbp.monty.frameworks.models.salience.on_object_observation import (
-    on_object_observation,
-)
 from tbp.monty.frameworks.models.salience.return_inhibitor import ReturnInhibitor
 from tbp.monty.frameworks.models.salience.segmentation.protocol import (
     SegmentationStrategy,
@@ -86,7 +82,7 @@ class SalienceSM(SensorModule):
         sensor = agent.sensors[SensorID(self.sensor_module_id)]
         self.state = SensorState(
             position=agent.position
-            + qt.rotate_vectors(agent.rotation, sensor.position),  # type: ignore
+            + qt.rotate_vectors(agent.rotation, sensor.position),  # type: ignore[arg-type]
             rotation=agent.rotation * sensor.rotation,
         )
 
@@ -121,61 +117,87 @@ class SalienceSM(SensorModule):
         if motor_only_step:
             return
 
-        rgba, depth = observation["rgba"], observation["depth"]
+        rgba = observation["rgba"]
+        depth = observation["depth"]
+        semantic_3d = observation["semantic_3d"]
+        image_shape = depth.shape
+        locations_map = semantic_3d[:, 0:3].reshape(image_shape + (3,))
+        on_object_mask = semantic_3d[:, 3].reshape(image_shape) > 0
 
+        # Compute salience map and do weighting.
         salience_map = self._salience_strategy(ctx=ctx, rgba=rgba, depth=depth)
-        on_object = on_object_observation(observation, salience_map)
+        center_row, center_col = image_shape[0] // 2, image_shape[1] // 2
+        if on_object_mask[center_row, center_col]:
+            center_location = locations_map[center_row, center_col]
+        else:
+            center_location = None
+
         ior_weights = self._return_inhibitor(
-            on_object.center_location, on_object.locations
+            center_location,
+            locations_map[on_object_mask],
         )
-        salience = self._weight_salience(
+        weighted_salience = self._weight_salience(
             ctx,
-            on_object.salience,
+            salience_map[on_object_mask],
             ior_weights,
         )
+        weighted_salience_map = np.zeros_like(salience_map)
+        weighted_salience_map[on_object_mask] = weighted_salience
 
-        segmentation_mask = None
+        goal_locations = locations_map[on_object_mask]
+        goal_salience = weighted_salience
+
+        info = {"salience_map": salience_map}  # telemetry
+
         if self._segmentation_strategy is not None:
-            segmentation_mask = self._segmentation_strategy(
+            segmentation_map = self._segmentation_strategy(
                 ctx=ctx, rgba=rgba, depth=depth
             )
-            observed_points, observed_features = self._segmented_points(
-                observation, segmentation_mask, salience_map
-            )
-            self._region_tracker.step(observed_points, observed_features)
-            # Only build goals for locations within the tracked region.
-            goal_indices = np.flatnonzero(
-                self._region_tracker.contains(on_object.locations)
-            )
-        else:
-            goal_indices = range(len(on_object.locations))
 
+            # Update region tracker with points that are both on-object and
+            # within the segmented region.
+            surface_map = segmentation_map * on_object_mask.astype(float)
+            surface_rows, surface_cols = np.where(surface_map > 0.0)
+            surface_locations = locations_map[surface_rows, surface_cols]
+            surface_salience = weighted_salience_map[surface_rows, surface_cols]
+
+            # First step the region tracker. Then filter out points using it.
+            self._region_tracker.step(surface_locations)
+            on_surface = self._region_tracker.contains_points(surface_locations)
+            goal_locations = surface_locations[on_surface]
+            goal_salience = surface_salience[on_surface]
+
+            info["segmentation"] = {
+                "segmentation_map": segmentation_map,
+                "surface_map": surface_map,
+                "surface_locations": surface_locations,
+                "surface_salience": surface_salience,
+            }
+            info["region"] = {
+                "voxel_size": self._region_tracker.voxel_size,
+                "voxel_grid": self._region_tracker.grid.copy(),
+            }
+
+        # Finally, build goals.
         self._goals = [
             Goal(
-                location=on_object.locations[i],
+                location=goal_locations[i],
                 morphological_features=None,
                 non_morphological_features=None,
-                confidence=salience[i],
+                confidence=goal_salience[i],
                 use_state=True,
                 sender_id=self._sensor_module_id,
                 sender_type="SM",
                 goal_tolerances=None,
             )
-            for i in goal_indices
+            for i in range(len(goal_locations))
         ]
-
+        info["goals"] = self._goals
         if self._save_raw_obs and not self.is_exploring:
-            info: dict = {
-                "salience_map": salience_map,
-                "goals": self._goals,
-            }
-            if segmentation_mask is not None:
-                info["segmentation_mask"] = segmentation_mask
-                info["region"] = self._region_tracker.state_dict()
             self._snapshot_telemetry.raw_observation(
                 observation,
                 self.state.rotation,
-                self.state.position,  # type: ignore
+                self.state.position,  # type: ignore[arg-type]
                 info=info,
             )
 
@@ -217,42 +239,3 @@ class SalienceSM(SensorModule):
             return np.clip(weighted_salience, 0, 1)
 
         return (weighted_salience - min_) / scale
-
-    def _segmented_points(
-        self,
-        observation: SensorObservation,
-        segmentation_mask: np.ndarray,
-        salience_map: np.ndarray,
-    ) -> tuple[npt.NDArray[np.float64], dict[str, npt.NDArray]]:
-        """Extract on-object segmented points and the features aligned with them.
-
-        Only on-object pixels contribute. The segmentation mask can bleed into the
-        background, and those pixels carry max-depth locations that would otherwise
-        pollute the region estimate as the sensor moves. Every returned feature is
-        sampled at the same pixels as the points, so it stays row-aligned with them.
-
-        Args:
-            observation: Sensor observation containing rgba, depth, and semantic_3d.
-            segmentation_mask: Binary mask indicating segmented pixels.
-            salience_map: Per-pixel salience with the same grid shape as the frame.
-
-        Returns:
-            A ``(points, features)`` pair. ``points`` is an ``(num_points, 3)``
-            array of world coordinates; ``features`` maps ``salience``/``depth``/
-            ``rgba`` to arrays whose leading axis matches ``points``.
-
-        """
-        rgba, depth = observation["rgba"], observation["depth"]
-        grid_shape = rgba.shape[:2]
-        semantic_3d = observation["semantic_3d"]
-        all_locations = semantic_3d[:, 0:3].reshape(grid_shape + (3,))
-        on_object = semantic_3d[:, 3].reshape(grid_shape).astype(int) > 0
-        seg_rows, seg_cols = np.where(np.logical_and(segmentation_mask, on_object))
-
-        points = all_locations[seg_rows, seg_cols]
-        features = {
-            "salience": salience_map[seg_rows, seg_cols],
-            "depth": depth[seg_rows, seg_cols],
-            "rgba": rgba[seg_rows, seg_cols],
-        }
-        return points, features

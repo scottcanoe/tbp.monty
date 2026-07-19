@@ -72,7 +72,7 @@ class RegionTracker:
         self,
         points: npt.NDArray[np.floating],
         features: Mapping[str, npt.NDArray] | None = None,
-    ) -> None:
+    ) -> dict:
         """Build this step's grid from the observed points.
 
         Args:
@@ -81,32 +81,39 @@ class RegionTracker:
             features: Point features aligned with ``points``, keyed by name. The
                 tracker chooses which of these become voxel features.
 
+        Returns:
+            Dictionary of stuff.
+
         """
         features = dict(features) if features is not None else {}
         self._grid = self._build(points, features)
+        result = {}
+        result["grid"] = self._grid
+        return result
 
-    def contains(self, point: npt.NDArray[np.floating]) -> bool | npt.NDArray[np.bool_]:
+    def contains_points(
+        self, points: npt.NDArray[np.floating]
+    ) -> npt.NDArray[np.bool_]:
         """Test which locations fall within an occupied voxel.
 
         Args:
-            point: a (3,) or (N, 3) array of coordinates.
+            points: a (N, 3) array of points.
 
         Returns:
-            A bool or boolean array.
+            A boolean array with shape (N,).
 
         """
         occupied = self._grid.data.index
         # Normalize to (N, 3) so one path serves both shapes; squeeze at the end.
-        points = np.atleast_2d(np.asarray(point))
+        points = np.atleast_2d(points)
         if len(occupied) == 0:
-            result = np.zeros(len(points), dtype=bool)
-        else:
-            indices = np.floor(points / self._voxel_size).astype(int)
-            query = pd.MultiIndex.from_arrays(indices.T, names=VOXEL_LEVELS)
-            result = query.isin(occupied)
-        return bool(result[0]) if np.ndim(point) == 1 else result
+            return np.zeros(len(points), dtype=bool)
 
-    def regions(self, connectivity: int = 26) -> list[VoxelGrid]:
+        indices = np.floor(points / self._voxel_size).astype(int)
+        query = pd.MultiIndex.from_arrays(indices.T, names=VOXEL_LEVELS)
+        return query.isin(occupied)
+
+    def connected_components(self, connectivity: int = 26) -> list[VoxelGrid]:
         """Group occupied voxels into distinct connected regions.
 
         Args:
@@ -117,13 +124,12 @@ class RegionTracker:
             region's voxels and the corresponding rows of every feature.
 
         """
-        data = self._grid.data
-        if len(data) == 0:
+        if len(self._grid) == 0:
             return []
-        coords = self._grid.voxels
+
         return [
-            VoxelGrid(data.iloc[members])
-            for members in connected_components(coords, connectivity)
+            VoxelGrid(self._grid.data.iloc[members])
+            for members in connected_components(self._grid.voxels, connectivity)
         ]
 
     def reset(self) -> None:
@@ -131,17 +137,27 @@ class RegionTracker:
         self._grid = VoxelGrid()
 
     def state_dict(self) -> Memento:
-        """Export the current grid for telemetry.
+        """Export the current state for telemetry."""  # noqa: DOC201
+        return {"grid": self._grid}
+
+    def _region_labels(self, connectivity: int) -> npt.NDArray[np.intp]:
+        """Label each occupied voxel with the region it belongs to.
+
+        Args:
+            connectivity: Voxel adjacency, one of 6, 18, or 26.
 
         Returns:
-            A mapping with ``voxels`` of shape ``(num_voxels, 3)`` and one entry
-            per feature, row-aligned with ``voxels``.
+            An ``(num_voxels,)`` array of region indices, row-aligned with the
+            grid's voxels.
 
         """
-        grid = self._grid
-        out: dict = {"voxels": grid.voxels}
-        out.update({name: grid.data[name].to_numpy() for name in grid.feature_names})
-        return out
+        voxels = self._grid.voxels
+        labels = np.zeros(len(voxels), dtype=np.intp)
+        if len(voxels) == 0:
+            return labels
+        for label, members in enumerate(connected_components(voxels, connectivity)):
+            labels[members] = label
+        return labels
 
     def _build(
         self,

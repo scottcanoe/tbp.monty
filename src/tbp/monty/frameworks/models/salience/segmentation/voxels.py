@@ -23,6 +23,8 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
+from tbp.monty.frameworks.models.buffer import BufferEncoder
+
 Voxel = Tuple[int, int, int]  # hashable voxel coordinates.
 
 
@@ -202,6 +204,27 @@ class VoxelGrid:
             assert tuple(data.columns.names) == FEATURE_LEVELS
         self._data = data
 
+    def __len__(self) -> int:
+        """Return the number of occupied voxels.
+
+        Returns:
+            How many voxels the grid holds.
+
+        """
+        return len(self._data)
+
+    def copy(self) -> VoxelGrid:
+        """Return an independent copy of this grid.
+
+        A grid is a snapshot, so callers that hold on to one -- telemetry, most
+        of all -- need it detached from whatever the tracker does next.
+
+        Returns:
+            A grid over a copy of this one's data.
+
+        """
+        return VoxelGrid(self._data.copy())
+
     @property
     def data(self) -> pd.DataFrame:
         return self._data
@@ -260,3 +283,31 @@ class VoxelGrid:
         data = pd.DataFrame(columns, index=index)
         data.columns = data.columns.set_names(FEATURE_LEVELS)
         return cls(data)
+
+
+def encode_voxel_grid(grid: VoxelGrid) -> dict:
+    """Encode a grid for JSON serialization.
+
+    Args:
+        grid: The grid to encode.
+
+    Returns:
+        A dictionary with voxel coordinates and encoded features.
+
+    """
+    df = grid.data
+    if len(df) == 0:
+        return {"voxels": [], "features": {}}
+
+    voxels = np.array(df.index.to_numpy().tolist())
+    features: dict[str, list] = {}
+    for feat_name in df.columns.get_level_values("feature").unique():
+        feat_data = df[feat_name].to_numpy()
+        # Flatten to (num_voxels, num_components) so each component is a column.
+        flat = feat_data.reshape(len(df), -1)
+        features[feat_name] = BufferEncoder.encode(flat)
+
+    return {"voxels": voxels, "features": features}
+
+
+BufferEncoder.register(VoxelGrid, encode_voxel_grid)

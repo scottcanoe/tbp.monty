@@ -62,4 +62,6 @@ sensor_module_2:
       max_octaves: 5
       use_depth: true
       use_orientation: false
+  segmentation_strategy:
+    _target_: tbp.monty.frameworks.models.salience.segmentation.strategies.slic_merge.SlicMerge
 
