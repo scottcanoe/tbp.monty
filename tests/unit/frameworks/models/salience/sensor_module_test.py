@@ -90,8 +90,16 @@ class SalienceSMTest(unittest.TestCase):
         self.sensor_module.step(self.ctx, data)
 
         if self.should_snapshot:  # type: ignore[attr-defined]
+            # No segmentation strategy is configured, so the snapshot carries only
+            # the salience map and the goals it produced.
             self.sensor_module._snapshot_telemetry.raw_observation.assert_called_once_with(  # type: ignore[attr-defined]
-                data, self.state.rotation, ArrayEqual(self.state.position)
+                data,
+                self.state.rotation,
+                ArrayEqual(self.state.position),
+                info={
+                    "salience_map": self.sensor_module._salience_strategy.return_value,  # type: ignore[attr-defined]
+                    "goals": [],
+                },
             )
         else:
             self.sensor_module._snapshot_telemetry.raw_observation.assert_not_called()  # type: ignore[attr-defined]

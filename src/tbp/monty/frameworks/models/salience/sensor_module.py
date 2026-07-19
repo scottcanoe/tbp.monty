@@ -22,13 +22,12 @@ from tbp.monty.frameworks.models.motor_system_state import AgentState, SensorSta
 from tbp.monty.frameworks.models.salience.on_object_observation import (
     on_object_observation,
 )
-from tbp.monty.frameworks.models.salience.region import (
-    RegionTracker,
-    VoxelGrid,
-)
 from tbp.monty.frameworks.models.salience.return_inhibitor import ReturnInhibitor
 from tbp.monty.frameworks.models.salience.segmentation.protocol import (
     SegmentationStrategy,
+)
+from tbp.monty.frameworks.models.salience.segmentation.region_tracker import (
+    RegionTracker,
 )
 from tbp.monty.frameworks.models.salience.strategies import (
     SalienceStrategy,
@@ -65,7 +64,9 @@ class SalienceSM(SensorModule):
         )
         # Accumulates observed points into an estimate of the object's region in
         # space; owns all voxel/region representation and merging details.
-        self._region_tracker = VoxelGrid() if region_tracker is None else region_tracker
+        self._region_tracker = (
+            RegionTracker() if region_tracker is None else region_tracker
+        )
 
         self._goals: list[Goal] = []
         # TODO: Goes away once experiment code is extracted
@@ -141,7 +142,7 @@ class SalienceSM(SensorModule):
             observed_points, observed_features = self._segmented_points(
                 observation, segmentation_mask, salience_map
             )
-            self._region_tracker.observe(observed_points, observed_features)
+            self._region_tracker.step(observed_points, observed_features)
             # Only build goals for locations within the tracked region.
             goal_indices = np.flatnonzero(
                 self._region_tracker.contains(on_object.locations)
