@@ -162,7 +162,9 @@ class SalienceSM(SensorModule):
             surface_salience = weighted_salience_map[surface_rows, surface_cols]
 
             # First step the region tracker. Then filter out points using it.
-            self._region_tracker.step(surface_locations)
+            self._region_tracker.step(
+                surface_locations, features={"confidence": surface_salience}
+            )
             on_surface = self._region_tracker.contains_points(surface_locations)
             goal_locations = surface_locations[on_surface]
             goal_salience = surface_salience[on_surface]

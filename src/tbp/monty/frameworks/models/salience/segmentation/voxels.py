@@ -297,15 +297,15 @@ def encode_voxel_grid(grid: VoxelGrid) -> dict:
     """
     df = grid.data
     if len(df) == 0:
-        return {"voxels": [], "features": {}}
+        return {"voxels": np.empty((0, 3), dtype=int), "features": {}}
 
+    # Arrays are handed back as-is: BufferEncoder already knows how to encode an
+    # ndarray, and will recurse into this mapping to do so.
     voxels = np.array(df.index.to_numpy().tolist())
-    features: dict[str, list] = {}
+    features: dict[str, npt.NDArray] = {}
     for feat_name in df.columns.get_level_values("feature").unique():
-        feat_data = df[feat_name].to_numpy()
         # Flatten to (num_voxels, num_components) so each component is a column.
-        flat = feat_data.reshape(len(df), -1)
-        features[feat_name] = BufferEncoder.encode(flat)
+        features[str(feat_name)] = df[feat_name].to_numpy().reshape(len(df), -1)
 
     return {"voxels": voxels, "features": features}
 
