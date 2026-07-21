@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - constants: defaults
-  - experiment: base_77obj_dist_agent
+  - experiment: infer_comp_lvl3_seg
 
 # Global defaults for the experiment config itself
 experiment:
