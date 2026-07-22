@@ -58,8 +58,8 @@ class RandomWalker(SegmentationStrategy):
     def __init__(
         self,
         beta: float = 350.0,
-        region_radius: float = 0.35,
-        fg_radius: float = 0.08,
+        region_radius: float = 0.3,
+        fg_radius: float = 0.015,
         smooth_sigma: float = 1.0,
         max_dim: int = 384,
         threshold: float = 0.5,

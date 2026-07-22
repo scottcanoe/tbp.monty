@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - constants: defaults
-  - experiment: infer_comp_lvl3_seg
+  - experiment: infer_comp_lvl3_seg_slic
 
 # Global defaults for the experiment config itself
 experiment:
