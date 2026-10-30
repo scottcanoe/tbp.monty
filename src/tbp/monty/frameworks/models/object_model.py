@@ -460,7 +460,6 @@ class GridObjectModel(GraphObjectModel):
         self,
         search_locations,
         num_neighbors,
-        return_distance=False,
     ):
         """Find nearest neighbors in graph for list of search locations.
 
@@ -472,31 +471,14 @@ class GridObjectModel(GraphObjectModel):
             would remove the cost of building the tree. TODO: Investigate this further.
 
         Returns:
-            If return_distance is True, return distances. Otherwise, return indices of
-            nearest neighbors.
+            Distances to and indices of the nearest neighbors.
         """
-        # if self._location_tree is not None:
-        # We are using the pretrained graphs and location trees for matching
-        (distances, nearest_node_ids) = self._location_tree.query(
+        return self._location_tree.query(
             search_locations,
             k=num_neighbors,
             p=2,  # euclidean distance
             workers=1,  # using more than 1 worker slows down run on lambda.
         )
-        # else:
-        #     # TODO: This is not done yet and doesn't work. It seems at the moment
-        #     # That kd Tree search is still more efficient.
-        #     # using new grid structure directly to query nearest neighbors
-        #     distances, nearest_node_ids = self._retrieve_locations_in_radius(
-        #         search_locations,
-        #         search_radius=search_radius,
-        #         max_neighbors=num_neighbors,
-        #     )
-
-        if return_distance:
-            return distances
-
-        return nearest_node_ids
 
     # ------------------ Getters & Setters ---------------------
     def set_graph(self, graph):

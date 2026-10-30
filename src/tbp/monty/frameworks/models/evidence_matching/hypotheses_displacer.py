@@ -263,7 +263,7 @@ class DefaultHypothesesDisplacer:
             graph_id, input_channel
         )
         num_neighbors = min(self.max_nneighbors, channel_locations.shape[0])
-        nearest_node_ids = self.graph_memory.get_graph(
+        _, nearest_node_ids = self.graph_memory.get_graph(
             graph_id, input_channel
         ).find_nearest_neighbors(
             search_locations,

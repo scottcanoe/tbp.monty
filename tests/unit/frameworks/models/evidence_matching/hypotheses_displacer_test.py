@@ -65,7 +65,7 @@ class DefaultHypothesesDisplacerTest(TestCase):
             side_effect=lambda search_locations, num_neighbors: location_tree.query(
                 search_locations,
                 k=num_neighbors,
-            )[1]
+            )
         )
         self.mock_graph_memory.get_graph.return_value = graph
         self.mock_graph_memory.get_locations_in_graph.return_value = channel_locations
